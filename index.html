@@ -3,87 +3,257 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Video Call</title>
+    <title>StarLight</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Add a simple data URI favicon to prevent 404 errors -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📞</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⭐</text></svg>">
 </head>
 <body>
-    <div class="container">
-        <h1>P2P Video Call</h1>
-        
-        <div id="compatWarning" class="compatibility-warning hidden">
-            <p>Limited WebRTC support detected in your browser.</p>
-            <p>You may experience issues with camera/microphone access.</p>
-            <p>The app will work in receive-only mode.</p>
-            <button id="dismissWarning">Dismiss</button>
-        </div>
-        
-        <div class="media-status">
-            <span id="cameraStatus" class="status-indicator">📷 Camera: Unknown</span>
-            <span id="micStatus" class="status-indicator">🎤 Mic: Unknown</span>
-        </div>
-        
-        <!-- Login screen -->
-        <div id="loginScreen" class="login-screen">
-            <h2>Enter Your Name to Start</h2>
-            <div class="input-group">
-                <input type="text" id="username" placeholder="Enter your name..." maxlength="20">
-                <button id="loginBtn">Join</button>
-            </div>
-            <p id="loginMessage" class="login-message"></p>
-        </div>
-
-        <!-- Call dashboard -->
-        <div id="callDashboard" class="call-dashboard hidden">
-            <h2>Welcome, <span id="userDisplayName"></span>!</h2>
-            
-            <div class="search-container">
-                <div class="input-group">
-                    <input type="text" id="searchInput" placeholder="Find someone by name..." maxlength="20">
-                    <button id="searchBtn">Search</button>
+    <!-- App Container -->
+    <div class="app-container">
+        <!-- Loading Screen -->
+        <div class="screen" id="loadingScreen">
+            <div class="loading-content">
+                <div class="app-logo">
+                    <span class="logo-icon"><i class="fas fa-star"></i></span>
+                    <h1>StarLight</h1>
                 </div>
-                <p id="searchResult" class="search-result hidden"></p>
-                <button id="callBtn" class="call-btn hidden">Call</button>
+                <div class="spinner"></div>
             </div>
         </div>
         
-        <!-- Call notification -->
-        <div id="callNotification" class="call-notification hidden">
-            <p>Incoming call from <span id="callerName"></span></p>
-            <div class="call-actions">
-                <button id="acceptCallBtn" class="accept-btn">Accept</button>
-                <button id="rejectCallBtn" class="reject-btn">Reject</button>
+        <!-- Auth Screen -->
+        <div class="screen hidden" id="authScreen">
+            <div class="auth-container">
+                <div class="app-logo">
+                    <span class="logo-icon"><i class="fas fa-star"></i></span>
+                    <h1>StarLight</h1>
+                </div>
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="loginTab" data-tab="login">Login</button>
+                    <button class="auth-tab" id="signupTab" data-tab="signup">Sign Up</button>
+                </div>
+                
+                <!-- Login Form -->
+                <form id="loginForm" class="auth-form">
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" placeholder="Enter your password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+                
+                <!-- Signup Form -->
+                <form id="signupForm" class="auth-form hidden">
+                    <div class="form-group">
+                        <label for="signupName">Full Name</label>
+                        <input type="text" id="signupName" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupEmail">Email</label>
+                        <input type="email" id="signupEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupPassword">Password</label>
+                        <input type="password" id="signupPassword" placeholder="Create a password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Sign Up</button>
+                </form>
+                
+                <div id="authMessage" class="auth-message"></div>
             </div>
         </div>
         
-        <!-- Call status -->
-        <div id="callStatus" class="call-status hidden">
-            <p id="callStatusMessage"></p>
-            <div class="loader hidden" id="callLoader"></div>
+        <!-- Main App Screen -->
+        <div class="screen hidden" id="mainScreen">
+            <div class="main-container">
+                <!-- Header -->
+                <header class="app-header">
+                    <div class="user-info">
+                        <div class="user-avatar" id="userAvatar">
+                            <span id="userInitials">US</span>
+                        </div>
+                        <div class="user-details">
+                            <h2 id="userFullName">User Name</h2>
+                            <p id="userNumber">SL-12345</p>
+                        </div>
+                    </div>
+                    <button id="logoutBtn" class="icon-btn"><i class="fas fa-sign-out-alt"></i></button>
+                </header>
+                
+                <!-- Tabs -->
+                <div class="app-tabs">
+                    <button class="tab-btn active" id="contactsTab" data-tab="contacts">
+                        <i class="fas fa-address-book"></i>
+                        <span>Contacts</span>
+                    </button>
+                    <button class="tab-btn" id="recentsTab" data-tab="recents">
+                        <i class="fas fa-clock"></i>
+                        <span>Recents</span>
+                    </button>
+                    <button class="tab-btn" id="keypadTab" data-tab="keypad">
+                        <i class="fas fa-th"></i>
+                        <span>Keypad</span>
+                    </button>
+                </div>
+                
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Contacts Tab -->
+                    <div class="tab-pane active" id="contactsPane">
+                        <div class="search-bar">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="contactSearch" placeholder="Search contacts or numbers...">
+                        </div>
+                        
+                        <div class="contact-list" id="contactsList">
+                            <!-- Contact items will be generated here -->
+                        </div>
+                        
+                        <button id="addContactBtn" class="floating-btn">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Recents Tab -->
+                    <div class="tab-pane" id="recentsPane">
+                        <div class="recents-list" id="recentsList">
+                            <!-- Recent call items will be generated here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Keypad Tab -->
+                    <div class="tab-pane" id="keypadPane">
+                        <div class="keypad-input">
+                            <input type="text" id="keypadInput" placeholder="Enter number" readonly>
+                            <button id="keypadClearBtn"><i class="fas fa-backspace"></i></button>
+                        </div>
+                        
+                        <div class="keypad-buttons">
+                            <button class="keypad-btn" data-key="1">1</button>
+                            <button class="keypad-btn" data-key="2">2<span class="keypad-letters">ABC</span></button>
+                            <button class="keypad-btn" data-key="3">3<span class="keypad-letters">DEF</span></button>
+                            <button class="keypad-btn" data-key="4">4<span class="keypad-letters">GHI</span></button>
+                            <button class="keypad-btn" data-key="5">5<span class="keypad-letters">JKL</span></button>
+                            <button class="keypad-btn" data-key="6">6<span class="keypad-letters">MNO</span></button>
+                            <button class="keypad-btn" data-key="7">7<span class="keypad-letters">PQRS</span></button>
+                            <button class="keypad-btn" data-key="8">8<span class="keypad-letters">TUV</span></button>
+                            <button class="keypad-btn" data-key="9">9<span class="keypad-letters">WXYZ</span></button>
+                            <button class="keypad-btn" data-key="*">*</button>
+                            <button class="keypad-btn" data-key="0">0<span class="keypad-letters">+</span></button>
+                            <button class="keypad-btn" data-key="#">#</button>
+                        </div>
+                        
+                        <button id="keypadCallBtn" class="call-btn">
+                            <i class="fas fa-phone-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
         
-        <!-- Video container -->
-        <div class="video-container hidden" id="videoContainer">
-            <div class="video-wrapper">
-                <video id="localVideo" autoplay muted playsinline></video>
-                <div class="video-label">You</div>
+        <!-- Contact Modal -->
+        <div class="modal" id="contactModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add Contact</h3>
+                    <button class="close-btn" id="closeContactModal"><i class="fas fa-times"></i></button>
+                </div>
+                <form id="addContactForm">
+                    <div class="form-group">
+                        <label for="contactName">Name</label>
+                        <input type="text" id="contactName" placeholder="Enter contact name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="contactNumber">StarLight Number</label>
+                        <input type="text" id="contactNumber" placeholder="SL-XXXXX" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Contact</button>
+                </form>
             </div>
-            <div class="video-wrapper">
-                <video id="remoteVideo" autoplay playsinline></video>
-                <div class="video-label">Remote</div>
-            </div>
-        </div>
-
-        <!-- Call controls -->
-        <div class="call-controls hidden" id="callControls">
-            <button id="hangupBtn" class="hangup-btn">End Call</button>
-            <button id="toggleVideoBtn">Toggle Video</button>
-            <button id="toggleAudioBtn">Toggle Audio</button>
         </div>
         
-        <div class="status">
-            <p id="statusMessage"></p>
+        <!-- Call Screen -->
+        <div class="screen hidden" id="callScreen">
+            <div class="call-container">
+                <div class="call-status">
+                    <p id="callStatusText">Calling...</p>
+                    <p id="callDuration">00:00</p>
+                </div>
+                
+                <div class="caller-info">
+                    <div class="caller-avatar">
+                        <span id="callerInitials">CN</span>
+                    </div>
+                    <h2 id="callerName">Contact Name</h2>
+                    <p id="callerNumber">SL-12345</p>
+                </div>
+                
+                <div class="video-container hidden" id="callVideoContainer">
+                    <div class="remote-video-wrapper">
+                        <video id="remoteVideo" autoplay playsinline></video>
+                    </div>
+                    <div class="local-video-wrapper">
+                        <video id="localVideo" autoplay muted playsinline></video>
+                    </div>
+                </div>
+                
+                <div class="call-actions" id="incomingCallActions">
+                    <button id="rejectCallBtn" class="call-action-btn reject-btn">
+                        <i class="fas fa-phone-slash"></i>
+                        <span>Decline</span>
+                    </button>
+                    <button id="acceptCallBtn" class="call-action-btn accept-btn">
+                        <i class="fas fa-phone-alt"></i>
+                        <span>Accept</span>
+                    </button>
+                </div>
+                
+                <div class="call-actions hidden" id="ongoingCallActions">
+                    <button id="toggleMuteBtn" class="call-action-btn">
+                        <i class="fas fa-microphone"></i>
+                        <span>Mute</span>
+                    </button>
+                    <button id="toggleVideoBtn" class="call-action-btn">
+                        <i class="fas fa-video"></i>
+                        <span>Video</span>
+                    </button>
+                    <button id="toggleSpeakerBtn" class="call-action-btn">
+                        <i class="fas fa-volume-up"></i>
+                        <span>Speaker</span>
+                    </button>
+                    <button id="endCallBtn" class="call-action-btn reject-btn">
+                        <i class="fas fa-phone-slash"></i>
+                        <span>End</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Incoming Call Alert -->
+        <div class="incoming-call-alert hidden" id="incomingCallAlert">
+            <div class="incoming-caller-info">
+                <div class="caller-avatar small">
+                    <span id="incomingCallerInitials">IC</span>
+                </div>
+                <div class="caller-details">
+                    <h3 id="incomingCallerName">Contact Name</h3>
+                    <p id="incomingCallerNumber">SL-12345</p>
+                </div>
+            </div>
+            <div class="incoming-call-actions">
+                <button id="alertRejectBtn" class="call-action-btn small reject-btn">
+                    <i class="fas fa-phone-slash"></i>
+                </button>
+                <button id="alertAcceptBtn" class="call-action-btn small accept-btn">
+                    <i class="fas fa-phone-alt"></i>
+                </button>
+            </div>
         </div>
     </div>
 

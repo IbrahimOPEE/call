@@ -1,7 +1,7 @@
 {
-  "name": "p2p-video-call",
+  "name": "starlight",
   "version": "1.0.0",
-  "description": "Peer-to-peer video calling app with name-based calling",
+  "description": "A modern calling application with WebRTC technology",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,15 +9,15 @@
   },
   "keywords": [
     "webrtc",
-    "p2p",
-    "video-call"
+    "call",
+    "video",
+    "audio",
+    "starlight"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.21.2",
-    "uuid": "^9.0.1",
-    "ws": "^8.18.1"
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

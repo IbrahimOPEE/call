@@ -1,77 +1,99 @@
-# P2P Video Calling App
+# StarLight - Modern Calling App
 
-A simple peer-to-peer video calling application using WebRTC. This app allows direct communication between two devices without requiring an external signaling server.
+A sleek, modern calling application built with WebRTC technology for real-time communication.
 
 ## Features
 
-- Direct peer-to-peer connection using WebRTC
-- Video and audio streaming
-- Simple role-based connection (host/client)
-- Manual exchange of connection details with clipboard support
-- Toggle video/audio during the call
-- Responsive design
+- User authentication with email signup
+- Unique phone number assignment
+- Contacts management
+- Call history with recent calls
+- Audio and video calling
+- Modern mobile-friendly UI
+- Local storage for user data persistence
 
-## How to Use
+## Technology Stack
 
-### Option 1: Run with Node.js (recommended)
+- HTML5, CSS3, JavaScript
+- WebRTC for real-time communication
+- Express.js for serving the application
+- Local storage for data persistence
 
-1. Make sure you have [Node.js](https://nodejs.org/) installed
-2. Open a terminal/command prompt in the project directory
-3. Run the server with: `node server.js`
-4. Open `http://localhost:8000` in your browser
+## Getting Started
 
-### Option 2: Run with Python server
+### Prerequisites
 
-1. Open a terminal/command prompt in the project directory
-2. Start a Python HTTP server:
-   - Python 3: `python -m http.server 8000`
-   - Python 2: `python -m SimpleHTTPServer 8000`
-3. Open `http://localhost:8000` in your browser
+- Node.js installed on your machine
+- Modern web browser (Chrome, Firefox, Safari, Edge)
 
-### Option 3: Use any other web server
+### Installation
 
-Place all files in a directory served by your web server and navigate to that location.
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/starlight-call.git
+   cd starlight-call
+   ```
 
-## Step-by-Step Connection Guide
+2. Install dependencies:
+   ```
+   npm install
+   ```
 
-1. **Start the application on both devices**:
-   - Grant camera and microphone permissions when prompted
-   - Both users will see their camera feed in the local video window
+3. Start the server:
+   ```
+   npm start
+   ```
 
-2. **Choose roles**:
-   - On the first device, click "Be Host"
-   - On the second device, click "Be Client"
+4. Open your browser and navigate to:
+   ```
+   http://localhost:8000
+   ```
 
-3. **Exchange connection information**:
-   - The Host will automatically generate an "offer" code
-   - The Host should click "Copy to Clipboard" and send this entire code to the Client (via message, email, etc.)
-   - The Client pastes this code (using "Paste from Clipboard" or manually) and clicks "Generate Answer"
-   - The Client's answer code will appear - click "Copy to Clipboard" and send it to the Host
-   - The Host pastes this answer code and clicks "Connect"
+## Usage
 
-4. **During the call**:
-   - Both parties should now see each other's video
-   - Use the "Toggle Video" button to turn video on/off
-   - Use the "Toggle Audio" button to mute/unmute
-   - Click "Hang Up" to end the call
+1. **Sign Up or Log In**:
+   - Create a new account with your email and password
+   - A unique StarLight number will be assigned to you
 
-## Troubleshooting
+2. **Manage Contacts**:
+   - Add contacts using the + button on the contacts tab
+   - Call contacts directly from the contacts list
 
-- **JSON Parsing Errors**: Make sure you're copying and pasting the entire code without any modifications
-- **Empty Video**: Check camera permissions and ensure your browser supports WebRTC
-- **Connection Fails**: Both devices might be behind strict NATs or firewalls
-- **Offer/Answer Doesn't Work**: Try refreshing the page and starting over
+3. **Make Calls**:
+   - Use the keypad to dial numbers
+   - Click on contacts to call them
+   - Toggle between audio and video calls
 
-## Browser Compatibility
+4. **View Call History**:
+   - Check your recent calls in the recents tab
+   - See missed, incoming, and outgoing calls
 
-This app works best on modern browsers that support WebRTC:
-- Chrome (recent versions)
-- Firefox (recent versions)
-- Edge (recent versions)
-- Safari (recent versions)
+## Demo Features
 
-## Network Requirements
+For demonstration purposes, you can trigger an incoming call simulation:
+- Open your browser console and type `simulateIncomingCall()`
 
-- For best results, both devices should be on the same local network
-- If on different networks, make sure ports are not blocked by firewalls
-- Only uses Google's free STUN server for NAT traversal 
+## Development
+
+For development with automatic server restart:
+```
+npm run dev
+```
+
+## Deployment
+
+This application can be deployed to any static hosting service or Node.js platform:
+
+1. **Vercel/Netlify**:
+   - Connect your GitHub repository
+   - Set the build command to `npm install`
+   - Set the output directory to `.`
+   - Set the start command to `npm start`
+
+2. **Heroku**:
+   - Follow Heroku's Node.js deployment guide
+   - The app is ready to deploy as is
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
