@@ -1,1408 +1,830 @@
-// DOM elements - StarLight UI
-const loadingScreen = document.getElementById('loadingScreen');
-const authScreen = document.getElementById('authScreen');
-const mainScreen = document.getElementById('mainScreen');
-const callScreen = document.getElementById('callScreen');
-const contactModal = document.getElementById('contactModal');
-const incomingCallAlert = document.getElementById('incomingCallAlert');
-
-// Auth elements
-const loginTab = document.getElementById('loginTab');
-const signupTab = document.getElementById('signupTab');
-const loginForm = document.getElementById('loginForm');
-const signupForm = document.getElementById('signupForm');
-const authMessage = document.getElementById('authMessage');
-
-// Main app elements
-const userFullName = document.getElementById('userFullName');
-const userNumber = document.getElementById('userNumber');
-const userInitials = document.getElementById('userInitials');
-const contactsTab = document.getElementById('contactsTab');
-const recentsTab = document.getElementById('recentsTab');
-const keypadTab = document.getElementById('keypadTab');
-const contactsPane = document.getElementById('contactsPane');
-const recentsPane = document.getElementById('recentsPane');
-const keypadPane = document.getElementById('keypadPane');
-const contactsList = document.getElementById('contactsList');
-const recentsList = document.getElementById('recentsList');
-const searchInput = document.getElementById('contactSearch');
-const keypadInput = document.getElementById('keypadInput');
-const addContactForm = document.getElementById('addContactForm');
-const logoutBtn = document.getElementById('logoutBtn');
-
-// Call screen elements
-const callerName = document.getElementById('callerName');
-const callerNumber = document.getElementById('callerNumber');
-const callerInitials = document.getElementById('callerInitials');
-const callStatusText = document.getElementById('callStatusText');
-const callDuration = document.getElementById('callDuration');
-const callVideoContainer = document.getElementById('callVideoContainer');
+// DOM elements
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
-const toggleMuteBtn = document.getElementById('toggleMuteBtn');
+const videoContainer = document.getElementById('videoContainer');
+const callControls = document.getElementById('callControls');
+const hangupBtn = document.getElementById('hangupBtn');
 const toggleVideoBtn = document.getElementById('toggleVideoBtn');
-const toggleSpeakerBtn = document.getElementById('toggleSpeakerBtn');
-const endCallBtn = document.getElementById('endCallBtn');
-const incomingCallActions = document.getElementById('incomingCallActions');
-const ongoingCallActions = document.getElementById('ongoingCallActions');
+const toggleAudioBtn = document.getElementById('toggleAudioBtn');
+const statusMessage = document.getElementById('statusMessage');
+const cameraStatus = document.getElementById('cameraStatus');
+const micStatus = document.getElementById('micStatus');
+const compatWarning = document.getElementById('compatWarning');
+const dismissWarning = document.getElementById('dismissWarning');
 
-// Incoming call elements
-const incomingCallerName = document.getElementById('incomingCallerName');
-const incomingCallerNumber = document.getElementById('incomingCallerNumber');
-const incomingCallerInitials = document.getElementById('incomingCallerInitials');
-const acceptCallBtn = document.getElementById('alertAcceptBtn');
-const rejectCallBtn = document.getElementById('alertRejectBtn');
+// Login elements
+const loginScreen = document.getElementById('loginScreen');
+const username = document.getElementById('username');
+const loginBtn = document.getElementById('loginBtn');
+const loginMessage = document.getElementById('loginMessage');
 
-// WebRTC configuration
-const webrtcConfig = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-    ]
-};
+// Dashboard elements
+const callDashboard = document.getElementById('callDashboard');
+const userDisplayName = document.getElementById('userDisplayName');
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const searchResult = document.getElementById('searchResult');
+const callBtn = document.getElementById('callBtn');
+
+// Call notification elements
+const callNotification = document.getElementById('callNotification');
+const callerName = document.getElementById('callerName');
+const acceptCallBtn = document.getElementById('acceptCallBtn');
+const rejectCallBtn = document.getElementById('rejectCallBtn');
+
+// Call status elements
+const callStatus = document.getElementById('callStatus');
+const callStatusMessage = document.getElementById('callStatusMessage');
+const callLoader = document.getElementById('callLoader');
 
 // Global state
-const state = {
-    user: null,
-    contacts: [],
-    callHistory: [],
-    currentCall: null,
+let state = {
+    userId: null,
+    username: null,
     localStream: null,
-    remoteStream: null,
-    isCallInProgress: false,
-    callStartTime: null,
-    currentTab: 'contacts',
+    peerConnection: null,
+    socket: null,
+    targetUser: null,
+    currentCallId: null,
+    isInitiator: false,
     videoEnabled: true,
     audioEnabled: true,
-    peerConnection: null,
-    websocket: null,
-    onlineUsers: new Set(),
-    isSocketConnected: false
+    iceCandidateQueue: []
 };
 
-// Initialize the app
-function initApp() {
-    console.log('Initializing StarLight app...');
+// Browser compatibility and capabilities
+const browserSupport = {
+    webRTC: false,
+    getUserMedia: false,
+    websocket: false,
+    clipboard: false,
+    name: 'unknown',
+    isMobile: false
+};
+
+// WebRTC configuration
+const rtcConfig = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ],
+    iceCandidatePoolSize: 10
+};
+
+// WebSocket URL - adjust for production
+const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const wsUrl = wsProtocol + window.location.host;
+
+// Initialize the application
+window.addEventListener('load', () => {
+    detectBrowserCapabilities();
+    if (browserSupport.webRTC) {
+        initMediaDevices();
+    }
     
-    // Simulate loading time
-    setTimeout(() => {
-        // Check if user is already logged in
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-            state.user = JSON.parse(savedUser);
-            loadUserData();
-            connectToSignalingServer();
-            showScreen(mainScreen);
-        } else {
-            showScreen(authScreen);
+    // Add event listeners
+    setupEventListeners();
+});
+
+// Detect browser capabilities
+function detectBrowserCapabilities() {
+    // Detect browser name
+    const userAgent = navigator.userAgent;
+    if (userAgent.indexOf("Chrome") > -1) {
+        browserSupport.name = 'Chrome';
+    } else if (userAgent.indexOf("Safari") > -1) {
+        browserSupport.name = 'Safari';
+    } else if (userAgent.indexOf("Firefox") > -1) {
+        browserSupport.name = 'Firefox';
+    } else if (userAgent.indexOf("MSIE") > -1 || userAgent.indexOf("Trident") > -1) {
+        browserSupport.name = 'IE';
+    } else if (userAgent.indexOf("Edge") > -1) {
+        browserSupport.name = 'Edge';
+    }
+    
+    // Check if mobile device
+    browserSupport.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Check WebRTC support
+    browserSupport.webRTC = (
+        window.RTCPeerConnection !== undefined && 
+        window.RTCIceCandidate !== undefined && 
+        window.RTCSessionDescription !== undefined
+    );
+    
+    // Check getUserMedia support
+    browserSupport.getUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    
+    // Check WebSocket support
+    browserSupport.websocket = ('WebSocket' in window);
+    
+    // Check clipboard API support
+    browserSupport.clipboard = !!(navigator.clipboard && navigator.clipboard.writeText);
+    
+    console.log('Browser capabilities detected:', browserSupport);
+    
+    // Show warning for limitations
+    if (!browserSupport.webRTC) {
+        showError('Your browser does not support WebRTC. Please use Chrome, Firefox, Safari, or Edge.');
+        disableApp();
+    } else if (!browserSupport.getUserMedia) {
+        compatWarning.classList.remove('hidden');
+        showMessage('Your browser has limited WebRTC support. You can continue in receive-only mode.');
+    } else if (!browserSupport.websocket) {
+        showError('Your browser does not support WebSockets. Please use a modern browser.');
+        disableApp();
+    }
+}
+
+// Set up event listeners
+function setupEventListeners() {
+    // Login events
+    loginBtn.addEventListener('click', handleLogin);
+    username.addEventListener('keypress', e => {
+        if (e.key === 'Enter') handleLogin();
+    });
+    
+    // Search events
+    searchBtn.addEventListener('click', handleSearch);
+    searchInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter') handleSearch();
+    });
+    
+    // Call events
+    callBtn.addEventListener('click', startCall);
+    acceptCallBtn.addEventListener('click', acceptCall);
+    rejectCallBtn.addEventListener('click', rejectCall);
+    hangupBtn.addEventListener('click', endCall);
+    
+    // Media toggles
+    toggleVideoBtn.addEventListener('click', toggleVideo);
+    toggleAudioBtn.addEventListener('click', toggleAudio);
+    
+    // Compatibility warning
+    if (dismissWarning) {
+        dismissWarning.addEventListener('click', () => {
+            compatWarning.classList.add('hidden');
+        });
+    }
+}
+
+// Initialize media devices
+async function initMediaDevices() {
+    try {
+        // Check for WebRTC support
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('WebRTC getUserMedia is not fully supported in this browser. You can still use the app but without camera/microphone access.');
         }
-    }, 1000);
-
-    // Initialize event listeners
-    initEventListeners();
-}
-
-// Load user data from local storage
-function loadUserData() {
-    // Load contacts
-    const savedContacts = localStorage.getItem('contacts');
-    if (savedContacts) {
-        state.contacts = JSON.parse(savedContacts);
-        renderContacts();
-    }
-
-    // Load call history
-    const savedHistory = localStorage.getItem('callHistory');
-    if (savedHistory) {
-        state.callHistory = JSON.parse(savedHistory);
-        renderRecents();
-    }
-
-    // Update UI with user info
-    if (userFullName) userFullName.textContent = state.user.fullName;
-    if (userNumber) userNumber.textContent = state.user.number;
-    if (userInitials) userInitials.textContent = getInitials(state.user.fullName);
-}
-
-// Show specific screen
-function showScreen(screen) {
-    if (loadingScreen) loadingScreen.classList.add('hidden');
-    if (authScreen) authScreen.classList.add('hidden');
-    if (mainScreen) mainScreen.classList.add('hidden');
-    if (callScreen) callScreen.classList.add('hidden');
-    
-    if (screen) screen.classList.remove('hidden');
-}
-
-// Initialize event listeners
-function initEventListeners() {
-    console.log('Setting up event listeners...');
-    
-    // Auth screen listeners
-    if (loginTab) {
-        loginTab.addEventListener('click', () => {
-            loginTab.classList.add('active');
-            signupTab.classList.remove('active');
-            loginForm.classList.remove('hidden');
-            signupForm.classList.add('hidden');
+        
+        // Try to get media permissions
+        showMessage('Requesting camera and microphone access...');
+        state.localStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: true 
         });
-    }
-
-    if (signupTab) {
-        signupTab.addEventListener('click', () => {
-            signupTab.classList.add('active');
-            loginTab.classList.remove('active');
-            signupForm.classList.remove('hidden');
-            loginForm.classList.add('hidden');
-        });
-    }
-
-    if (loginForm) {
-        loginForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleLogin(e);
-        });
-    }
-
-    if (signupForm) {
-        signupForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleSignup(e);
-        });
-    }
-
-    // Main screen tab listeners
-    if (contactsTab) {
-        contactsTab.addEventListener('click', () => {
-            setActiveTab('contacts');
-        });
-    }
-
-    if (recentsTab) {
-        recentsTab.addEventListener('click', () => {
-            setActiveTab('recents');
-        });
-    }
-
-    if (keypadTab) {
-        keypadTab.addEventListener('click', () => {
-            setActiveTab('keypad');
-        });
-    }
-
-    // Search contacts
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            renderContacts(query);
-        });
-    }
-
-    // Add contact
-    const addContactBtn = document.getElementById('addContactBtn');
-    if (addContactBtn) {
-        addContactBtn.addEventListener('click', () => {
-            if (contactModal) contactModal.classList.add('active');
-        });
-    }
-
-    const closeContactModal = document.getElementById('closeContactModal');
-    if (closeContactModal) {
-        closeContactModal.addEventListener('click', () => {
-            if (contactModal) contactModal.classList.remove('active');
-        });
-    }
-
-    if (addContactForm) {
-        addContactForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const name = e.target.elements.contactName.value;
-            const number = e.target.elements.contactNumber.value;
-
-            addContact(name, number);
-            contactModal.classList.remove('active');
-            addContactForm.reset();
-        });
-    }
-
-    // Add event listeners for keypad buttons
-    const keypadBtns = document.querySelectorAll('.keypad-btn');
-    keypadBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const key = btn.getAttribute('data-key');
-            const keypadInput = document.getElementById('keypadInput');
-            if (keypadInput) {
-                keypadInput.value += key;
-            }
-        });
-    });
-
-    // Add event listener for keypad clear button
-    const keypadClearBtn = document.getElementById('keypadClearBtn');
-    if (keypadClearBtn) {
-        keypadClearBtn.addEventListener('click', () => {
-            const keypadInput = document.getElementById('keypadInput');
-            if (keypadInput && keypadInput.value.length > 0) {
-                keypadInput.value = keypadInput.value.slice(0, -1);
-            }
-        });
-    }
-
-    // Add event listener for keypad call button
-    const keypadCallBtn = document.getElementById('keypadCallBtn');
-    if (keypadCallBtn) {
-        keypadCallBtn.addEventListener('click', () => {
-            const keypadInput = document.getElementById('keypadInput');
-            if (keypadInput && keypadInput.value.trim()) {
-                const number = keypadInput.value.trim();
-                initiateCall(number);
-                keypadInput.value = '';
-            }
-        });
-    }
-
-    // Call screen action listeners
-    if (toggleMuteBtn) {
-        toggleMuteBtn.addEventListener('click', toggleMute);
-    }
-
-    if (toggleVideoBtn) {
-        toggleVideoBtn.addEventListener('click', toggleVideo);
-    }
-
-    if (toggleSpeakerBtn) {
-        toggleSpeakerBtn.addEventListener('click', toggleSpeaker);
-    }
-
-    if (endCallBtn) {
-        endCallBtn.addEventListener('click', endCall);
-    }
-
-    // Incoming call action listeners
-    if (acceptCallBtn) {
-        acceptCallBtn.addEventListener('click', acceptIncomingCall);
-    }
-
-    if (rejectCallBtn) {
-        rejectCallBtn.addEventListener('click', rejectIncomingCall);
-    }
-
-    // User logout
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', logout);
+        
+        localVideo.srcObject = state.localStream;
+        updateMediaStatus();
+    } catch (error) {
+        console.error('Error accessing media devices:', error);
+        let errorMessage = 'Camera/microphone access issue: ';
+        
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            errorMessage += 'You need to grant camera and microphone permissions.';
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+            errorMessage += 'No camera or microphone found.';
+        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+            errorMessage += 'Your camera or microphone is already in use by another application.';
+        } else if (error.name === 'OverconstrainedError') {
+            errorMessage += 'The requested camera/microphone constraints cannot be satisfied.';
+        } else {
+            errorMessage += error.message || 'Unknown error.';
+        }
+        
+        showMessage(errorMessage);
+        updateMediaStatus();
     }
 }
 
-// Handle login form submission
-function handleLogin(e) {
-    const email = e.target.elements.loginEmail.value;
-    const password = e.target.elements.loginPassword.value;
-    
-    // Simple login validation
-    const savedUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = savedUsers.find(u => u.email === email && u.password === password);
-    
-    if (user) {
-        state.user = user;
-        localStorage.setItem('user', JSON.stringify(user));
-        loadUserData();
-        connectToSignalingServer();
-        showScreen(mainScreen);
+// Update media status indicators
+function updateMediaStatus() {
+    // Check camera status
+    if (!state.localStream) {
+        cameraStatus.textContent = "📷 Camera: Not available";
+        cameraStatus.style.backgroundColor = "#ffcccc";
+        micStatus.textContent = "🎤 Mic: Not available";
+        micStatus.style.backgroundColor = "#ffcccc";
+        return;
+    }
+
+    const videoTracks = state.localStream.getVideoTracks();
+    if (videoTracks.length === 0) {
+        cameraStatus.textContent = "📷 Camera: Not found";
+        cameraStatus.style.backgroundColor = "#ffcccc";
     } else {
-        if (authMessage) authMessage.textContent = 'Invalid email or password';
+        const videoTrack = videoTracks[0];
+        cameraStatus.textContent = `📷 Camera: ${videoTrack.enabled ? 'On' : 'Off'}`;
+        cameraStatus.style.backgroundColor = videoTrack.enabled ? "#d4edda" : "#fff3cd";
     }
-}
 
-// Handle signup form submission
-function handleSignup(e) {
-    const fullName = e.target.elements.signupName.value;
-    const email = e.target.elements.signupEmail.value;
-    const password = e.target.elements.signupPassword.value;
-    
-    // Generate a random number (in a real app, this would be handled by a backend)
-    const number = generateUniqueNumber();
-    
-    // Save user
-    const savedUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    
-    // Check if email already exists
-    if (savedUsers.some(u => u.email === email)) {
-        if (authMessage) authMessage.textContent = 'Email already registered';
-        return;
-    }
-    
-    const newUser = { fullName, email, password, number };
-    savedUsers.push(newUser);
-    
-    localStorage.setItem('users', JSON.stringify(savedUsers));
-    
-    // Log in the new user
-    state.user = newUser;
-    localStorage.setItem('user', JSON.stringify(newUser));
-    loadUserData();
-    showScreen(mainScreen);
-}
-
-// Set active tab
-function setActiveTab(tabName) {
-    state.currentTab = tabName;
-    
-    // Update tab buttons
-    if (contactsTab) contactsTab.classList.remove('active');
-    if (recentsTab) recentsTab.classList.remove('active');
-    if (keypadTab) keypadTab.classList.remove('active');
-    
-    // Update tab panes
-    if (contactsPane) contactsPane.classList.remove('active');
-    if (recentsPane) recentsPane.classList.remove('active');
-    if (keypadPane) keypadPane.classList.remove('active');
-    
-    // Set active tab and pane
-    if (tabName === 'contacts') {
-        if (contactsTab) contactsTab.classList.add('active');
-        if (contactsPane) contactsPane.classList.add('active');
-    } else if (tabName === 'recents') {
-        if (recentsTab) recentsTab.classList.add('active');
-        if (recentsPane) recentsPane.classList.add('active');
-    } else if (tabName === 'keypad') {
-        if (keypadTab) keypadTab.classList.add('active');
-        if (keypadPane) keypadPane.classList.add('active');
-    }
-}
-
-// Render contacts
-function renderContacts(searchQuery = '') {
-    if (!contactsList) return;
-    
-    contactsList.innerHTML = '';
-    
-    const filteredContacts = searchQuery 
-        ? state.contacts.filter(c => 
-            c.name.toLowerCase().includes(searchQuery) || 
-            c.number.includes(searchQuery))
-        : state.contacts;
-    
-    if (filteredContacts.length === 0) {
-        contactsList.innerHTML = `
-            <div class="empty-message">
-                ${searchQuery ? 'No contacts matching your search' : 'No contacts yet'}
-            </div>
-        `;
-        return;
-    }
-    
-    filteredContacts.sort((a, b) => a.name.localeCompare(b.name))
-        .forEach(contact => {
-            const contactEl = document.createElement('div');
-            contactEl.className = 'contact-item';
-            contactEl.innerHTML = `
-                <div class="contact-avatar">${getInitials(contact.name)}</div>
-                <div class="contact-info">
-                    <h3>${contact.name}</h3>
-                    <p>${formatPhoneNumber(contact.number)}</p>
-                </div>
-                <div class="contact-actions">
-                    <button class="call-contact-btn" data-number="${contact.number}">
-                        <i class="fas fa-phone-alt"></i>
-                    </button>
-                    <button class="video-contact-btn" data-number="${contact.number}">
-                        <i class="fas fa-video"></i>
-                    </button>
-                </div>
-            `;
-            
-            contactsList.appendChild(contactEl);
-            
-            // Add event listeners to the call buttons
-            contactEl.querySelector('.call-contact-btn').addEventListener('click', () => {
-                initiateCall(contact.number, false);
-            });
-            
-            contactEl.querySelector('.video-contact-btn').addEventListener('click', () => {
-                initiateCall(contact.number, true);
-            });
-        });
-}
-
-// Render recent calls
-function renderRecents() {
-    if (!recentsList) return;
-    
-    recentsList.innerHTML = '';
-    
-    if (state.callHistory.length === 0) {
-        recentsList.innerHTML = `
-            <div class="empty-message">No recent calls</div>
-        `;
-        return;
-    }
-    
-    // Show most recent calls first
-    [...state.callHistory].reverse().forEach(call => {
-        const contactName = getContactNameByNumber(call.number) || 'Unknown';
-        const typeClass = call.type === 'missed' ? 'missed-call' : 
-                        call.direction === 'outgoing' ? 'outgoing-call' : 'incoming-call';
-        const typeIcon = call.type === 'missed' ? 'phone-missed' : 
-                       call.direction === 'outgoing' ? 'phone-alt' : 'phone';
-        
-        const recentEl = document.createElement('div');
-        recentEl.className = 'recent-item';
-        recentEl.innerHTML = `
-            <div class="recent-type ${typeClass}">
-                <i class="fas fa-${typeIcon}"></i>
-            </div>
-            <div class="contact-avatar">${getInitials(contactName)}</div>
-            <div class="recent-info">
-                <h3>${contactName}</h3>
-                <div class="recent-meta">
-                    <span>${formatPhoneNumber(call.number)}</span>
-                    <span class="recent-time">${formatCallTime(call.timestamp)}</span>
-                </div>
-            </div>
-            <button class="call-recent-btn" data-number="${call.number}">
-                <i class="fas fa-phone-alt"></i>
-            </button>
-        `;
-        
-        recentsList.appendChild(recentEl);
-        
-        // Add event listener to call button
-        recentEl.querySelector('.call-recent-btn').addEventListener('click', () => {
-            initiateCall(call.number);
-        });
-    });
-}
-
-// Add a new contact
-function addContact(name, number) {
-    const newContact = { name, number };
-    
-    // Check if contact already exists
-    const existingIndex = state.contacts.findIndex(c => c.number === number);
-    if (existingIndex !== -1) {
-        state.contacts[existingIndex] = newContact;
+    const audioTracks = state.localStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+        micStatus.textContent = "🎤 Mic: Not found";
+        micStatus.style.backgroundColor = "#ffcccc";
     } else {
-        state.contacts.push(newContact);
+        const audioTrack = audioTracks[0];
+        micStatus.textContent = `🎤 Mic: ${audioTrack.enabled ? 'On' : 'Off'}`;
+        micStatus.style.backgroundColor = audioTrack.enabled ? "#d4edda" : "#fff3cd";
     }
-    
-    // Save to local storage
-    localStorage.setItem('contacts', JSON.stringify(state.contacts));
-    
-    // Update UI
-    renderContacts();
 }
 
-// Initiate a call
-function initiateCall(number, withVideo = false) {
-    // Find contact name if available
-    const contactName = getContactNameByNumber(number) || 'Unknown';
+// Request camera permission manually
+async function requestCameraPermission() {
+    try {
+        showMessage('Requesting camera and microphone permission...');
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 320 }, height: { ideal: 240 } },
+            audio: true 
+        });
+        
+        // If we got here, permission was granted
+        state.localStream = stream;
+        localVideo.srcObject = stream;
+        showMessage('Camera permission granted! You can now send video.');
+        updateMediaStatus();
+        
+        // If we're in a call already, add tracks to the existing connection
+        if (state.peerConnection && state.peerConnection.connectionState === 'connected') {
+            stream.getTracks().forEach(track => {
+                state.peerConnection.addTrack(track, stream);
+            });
+            showMessage('Added your video/audio to the existing call!');
+        }
+        
+        // Hide the warning
+        compatWarning.classList.add('hidden');
+        
+    } catch (error) {
+        console.error('Permission request failed:', error);
+        showError('Camera permission denied or not available: ' + error.message);
+        updateMediaStatus();
+    }
+}
+
+// Connect to WebSocket server
+function connectWebSocket() {
+    state.socket = new WebSocket(wsUrl);
     
-    // Set current call information
-    state.currentCall = {
-        number: number,
-        name: contactName,
-        direction: 'outgoing',
-        withVideo: withVideo
+    state.socket.onopen = () => {
+        console.log('WebSocket connected!');
+        showMessage('Connected to signaling server');
     };
     
-    // Set call screen information
-    if (callerName) callerName.textContent = contactName;
-    if (callerNumber) callerNumber.textContent = formatPhoneNumber(number);
-    if (callerInitials) callerInitials.textContent = getInitials(contactName);
+    state.socket.onclose = () => {
+        console.log('WebSocket disconnected');
+        showMessage('Disconnected from signaling server. Refresh to reconnect.');
+    };
     
-    // Show/hide appropriate call actions
-    if (incomingCallActions) incomingCallActions.classList.add('hidden');
-    if (ongoingCallActions) ongoingCallActions.classList.remove('hidden');
+    state.socket.onerror = error => {
+        console.error('WebSocket error:', error);
+        showError('Error connecting to signaling server');
+    };
     
-    // Initialize WebRTC
-    setupWebRTC(withVideo);
+    state.socket.onmessage = event => {
+        try {
+            const data = JSON.parse(event.data);
+            handleSignalingMessage(data);
+        } catch (error) {
+            console.error('Error parsing message:', error);
+        }
+    };
+}
+
+// Handle signaling messages
+function handleSignalingMessage(data) {
+    console.log('Received message:', data.type);
     
-    // Show call screen
-    showScreen(callScreen);
+    switch(data.type) {
+        case 'registered':
+            handleRegistered(data);
+            break;
+            
+        case 'error':
+            showError(data.message);
+            break;
+            
+        case 'search_result':
+            handleSearchResult(data);
+            break;
+            
+        case 'incoming_call':
+            handleIncomingCall(data);
+            break;
+            
+        case 'call_requested':
+            showCallStatus(`Calling ${state.targetUser.name}...`, true);
+            break;
+            
+        case 'call_accepted':
+            handleCallAccepted(data);
+            break;
+            
+        case 'call_rejected':
+            handleCallRejected(data);
+            break;
+            
+        case 'call_connecting':
+            showCallStatus('Call connecting...', true);
+            break;
+            
+        case 'webrtc_offer':
+            handleWebRTCOffer(data);
+            break;
+            
+        case 'webrtc_answer':
+            handleWebRTCAnswer(data);
+            break;
+            
+        case 'webrtc_ice_candidate':
+            handleIceCandidate(data);
+            break;
+            
+        case 'call_ended':
+            handleCallEnded(data);
+            break;
+            
+        case 'call_expired':
+            showMessage('Call request expired');
+            hideCallStatus();
+            break;
+            
+        default:
+            console.log('Unknown message type:', data.type);
+    }
+}
+
+// Registration successful
+function handleRegistered(data) {
+    state.userId = data.id;
+    showMessage(data.message);
     
-    // Update call status
-    updateCallStatus('Calling...');
+    // Show dashboard
+    loginScreen.classList.add('hidden');
+    callDashboard.classList.remove('hidden');
+    userDisplayName.textContent = state.username;
+}
+
+// Handle search results
+function handleSearchResult(data) {
+    if (data.found) {
+        searchResult.textContent = `Found user: ${data.name}`;
+        searchResult.style.color = '#28a745';
+        callBtn.classList.remove('hidden');
+        // Store target user
+        state.targetUser = {
+            id: data.id,
+            name: data.name
+        };
+    } else {
+        searchResult.textContent = `User not found: ${data.name}`;
+        searchResult.style.color = '#dc3545';
+        callBtn.classList.add('hidden');
+        state.targetUser = null;
+    }
+    searchResult.classList.remove('hidden');
+}
+
+// Handle incoming call
+function handleIncomingCall(data) {
+    state.currentCallId = data.callId;
+    callerName.textContent = data.from;
+    callNotification.classList.remove('hidden');
+    // Play sound
+    playSound('ringtone');
+}
+
+// Handle call accepted
+function handleCallAccepted(data) {
+    hideCallStatus();
+    state.isInitiator = true;
+    createPeerConnection();
     
-    // Send call request to signaling server
-    sendToSignalingServer({
-        type: 'call-request',
-        from: state.user.number,
-        to: number
+    // Create and send offer
+    sendWebRTCOffer(data.targetId);
+}
+
+// Handle call rejected
+function handleCallRejected() {
+    hideCallStatus();
+    state.currentCallId = null;
+    state.targetUser = null;
+    showMessage('Call was rejected');
+}
+
+// Handle WebRTC offer
+async function handleWebRTCOffer(data) {
+    // Create peer connection if not exists
+    if (!state.peerConnection) {
+        createPeerConnection();
+    }
+    
+    try {
+        // Set remote description
+        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        
+        // Process any queued ICE candidates
+        while (state.iceCandidateQueue.length) {
+            const candidate = state.iceCandidateQueue.shift();
+            await state.peerConnection.addIceCandidate(candidate);
+        }
+        
+        // Create answer
+        const answer = await state.peerConnection.createAnswer();
+        await state.peerConnection.setLocalDescription(answer);
+        
+        // Send answer
+        sendToServer({
+            type: 'webrtc_answer',
+            callerId: data.callerId,
+            answer: state.peerConnection.localDescription
+        });
+        
+    } catch (error) {
+        console.error('Error handling WebRTC offer:', error);
+        showError('Failed to process call connection: ' + error.message);
+    }
+}
+
+// Handle WebRTC answer
+async function handleWebRTCAnswer(data) {
+    try {
+        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        console.log('Remote description set successfully');
+        
+        // Process any queued ICE candidates
+        while (state.iceCandidateQueue.length) {
+            const candidate = state.iceCandidateQueue.shift();
+            await state.peerConnection.addIceCandidate(candidate);
+        }
+    } catch (error) {
+        console.error('Error setting remote description:', error);
+        showError('Failed to complete call connection: ' + error.message);
+    }
+}
+
+// Handle ICE candidate
+function handleIceCandidate(data) {
+    const candidate = new RTCIceCandidate(data.candidate);
+    
+    if (state.peerConnection && state.peerConnection.remoteDescription) {
+        state.peerConnection.addIceCandidate(candidate)
+            .catch(error => console.error('Error adding ICE candidate:', error));
+    } else {
+        // Queue candidates until we have a remote description
+        state.iceCandidateQueue.push(candidate);
+    }
+}
+
+// Handle call ended
+function handleCallEnded() {
+    endCallCleanup();
+    showMessage('Call ended by the other person');
+}
+
+// Handle login attempt
+function handleLogin() {
+    const name = username.value.trim();
+    if (!name) {
+        loginMessage.textContent = 'Please enter a name';
+        return;
+    }
+    
+    state.username = name;
+    connectWebSocket();
+    
+    setTimeout(() => {
+        // Register with server
+        sendToServer({
+            type: 'register',
+            name: name
+        });
+    }, 1000);
+}
+
+// Handle search
+function handleSearch() {
+    const query = searchInput.value.trim();
+    if (!query) {
+        showError('Please enter a name to search');
+        return;
+    }
+    
+    sendToServer({
+        type: 'search',
+        name: query
     });
+}
+
+// Start a call
+function startCall() {
+    if (!state.targetUser) {
+        showError('No user selected to call');
+        return;
+    }
     
-    // Add to call history
-    addCallHistory({
-        number,
-        direction: 'outgoing',
-        type: 'initiated',
-        timestamp: Date.now(),
-        duration: 0 // Will be updated when call ends
+    sendToServer({
+        type: 'call_request',
+        targetId: state.targetUser.id
     });
 }
 
 // Accept incoming call
-function acceptIncomingCall() {
-    if (!state.currentCall) return;
-    
-    const { number, name, withVideo } = state.currentCall;
+function acceptCall() {
+    callNotification.classList.add('hidden');
     
     // Stop ringtone
-    stopRingtone();
+    stopSound('ringtone');
     
-    // Hide incoming call alert
-    if (incomingCallAlert) incomingCallAlert.classList.add('hidden');
-    
-    // Set call screen information
-    if (callerName) callerName.textContent = name;
-    if (callerNumber) callerNumber.textContent = formatPhoneNumber(number);
-    if (callerInitials) callerInitials.textContent = getInitials(name);
-    
-    // Show/hide appropriate call actions
-    if (incomingCallActions) incomingCallActions.classList.add('hidden');
-    if (ongoingCallActions) ongoingCallActions.classList.remove('hidden');
-    
-    // Initialize WebRTC - use the same video mode as the caller
-    setupWebRTC(withVideo);
-    
-    // Create peer connection
-    createPeerConnection(number);
-    
-    // Send call response to signaling server
-    sendToSignalingServer({
-        type: 'call-response',
-        from: state.user.number,
-        to: number,
-        accepted: true,
-        withVideo: withVideo
+    sendToServer({
+        type: 'call_response',
+        callId: state.currentCallId,
+        accept: true
     });
     
-    // Add to call history
-    addCallHistory({
-        number,
-        direction: 'incoming',
-        type: 'completed',
-        timestamp: Date.now(),
-        duration: 0 // Will be updated when call ends
-    });
-    
-    // Show call screen
-    showScreen(callScreen);
-    
-    // Update call status
-    updateCallStatus('Connecting...');
-    
-    // Start call timer
-    state.callStartTime = Date.now();
-    startCallTimer();
+    showCallStatus('Connecting to call...', true);
 }
 
 // Reject incoming call
-function rejectIncomingCall() {
-    if (!state.currentCall) return;
+function rejectCall() {
+    callNotification.classList.add('hidden');
     
-    const { number } = state.currentCall;
+    // Stop ringtone
+    stopSound('ringtone');
     
-    // Hide incoming call alert
-    if (incomingCallAlert) incomingCallAlert.classList.add('hidden');
-    
-    // Send call response to signaling server
-    sendToSignalingServer({
-        type: 'call-response',
-        from: state.user.number,
-        to: number,
-        accepted: false
+    sendToServer({
+        type: 'call_response',
+        callId: state.currentCallId,
+        accept: false
     });
     
-    // Add to call history as missed
-    addCallHistory({
-        number,
-        direction: 'incoming',
-        type: 'rejected',
-        timestamp: Date.now(),
-        duration: 0
-    });
-    
-    // Reset current call
-    state.currentCall = null;
-    
-    // Update recents tab
-    renderRecents();
+    state.currentCallId = null;
 }
 
-// End current call
+// End the call
 function endCall() {
-    // Notify the remote peer if there's an active call
-    if (state.currentCall) {
-        sendToSignalingServer({
-            type: 'end-call',
-            to: state.currentCall.number
-        });
-    }
-    
-    // Clean up WebRTC
-    cleanupWebRTC();
-    
-    // Update call history with duration
-    if (state.callStartTime) {
-        const callDurationSecs = Math.round((Date.now() - state.callStartTime) / 1000);
-        
-        // Update the last call in history
-        if (state.callHistory.length > 0) {
-            const lastCall = state.callHistory[state.callHistory.length - 1];
-            lastCall.duration = callDurationSecs;
-            lastCall.type = 'completed';
-            localStorage.setItem('callHistory', JSON.stringify(state.callHistory));
+    if (state.peerConnection) {
+        // Notify other user
+        if (state.targetUser) {
+            sendToServer({
+                type: 'end_call',
+                targetId: state.targetUser.id
+            });
         }
         
-        state.callStartTime = null;
-    }
-    
-    // Reset call status
-    updateCallStatus('');
-    
-    // Reset current call
-    state.currentCall = null;
-    
-    // Return to main screen
-    showScreen(mainScreen);
-    
-    // Update recents tab
-    renderRecents();
-}
-
-// Toggle audio mute
-function toggleMute() {
-    if (state.localStream) {
-        const audioTracks = state.localStream.getAudioTracks();
-        if (audioTracks.length > 0 && toggleMuteBtn) {
-            const muted = !audioTracks[0].enabled;
-            audioTracks[0].enabled = muted;
-            toggleMuteBtn.querySelector('i').className = muted ? 'fas fa-microphone' : 'fas fa-microphone-slash';
-            toggleMuteBtn.querySelector('span').textContent = muted ? 'Mute' : 'Unmute';
-        }
+        endCallCleanup();
     }
 }
 
-// Toggle video
-function toggleVideo() {
-    if (state.localStream) {
-        let videoTracks = state.localStream.getVideoTracks();
-        
-        // If no video tracks and trying to enable video
-        if (videoTracks.length === 0) {
-            // Try to add video
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(videoStream => {
-                    const videoTrack = videoStream.getVideoTracks()[0];
-                    
-                    // Add the video track to our local stream
-                    state.localStream.addTrack(videoTrack);
-                    
-                    // Add the track to the peer connection
-                    if (state.peerConnection) {
-                        state.peerConnection.addTrack(videoTrack, state.localStream);
-                    }
-                    
-                    // Display local video
-                    if (localVideo) {
-                        localVideo.srcObject = state.localStream;
-                        localVideo.play().catch(error => console.error('Error playing local video:', error));
-                    }
-                    
-                    // Show video container
-                    if (callVideoContainer) {
-                        callVideoContainer.classList.remove('hidden');
-                    }
-                    
-                    // Update button state
-                    if (toggleVideoBtn) {
-                        toggleVideoBtn.querySelector('i').className = 'fas fa-video';
-                        toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
-                    }
-                    
-                    // Update call state
-                    if (state.currentCall) {
-                        state.currentCall.withVideo = true;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error adding video track:', error);
-                    alert('Could not access camera. Please check permissions.');
-                });
-            return;
-        }
-        
-        // If there are video tracks, toggle them
-        if (videoTracks.length > 0 && toggleVideoBtn) {
-            const videoEnabled = !videoTracks[0].enabled;
-            videoTracks[0].enabled = videoEnabled;
-            toggleVideoBtn.querySelector('i').className = videoEnabled ? 'fas fa-video' : 'fas fa-video-slash';
-            toggleVideoBtn.querySelector('span').textContent = videoEnabled ? 'Stop Video' : 'Start Video';
-        }
-    }
-}
-
-// Toggle speaker
-function toggleSpeaker() {
-    // In a real implementation, this would use the AudioContext API
-    // For demo purposes, we'll just toggle the button state
-    if (toggleSpeakerBtn) {
-        const speakerActive = toggleSpeakerBtn.classList.toggle('active');
-        toggleSpeakerBtn.querySelector('i').className = speakerActive ? 'fas fa-volume-up' : 'fas fa-volume-down';
-        toggleSpeakerBtn.querySelector('span').textContent = speakerActive ? 'Speaker' : 'Earpiece';
-    }
-}
-
-// Update call status text
-function updateCallStatus(status) {
-    if (callStatusText) callStatusText.textContent = status;
-}
-
-// Start call timer
-function startCallTimer() {
-    if (!callDuration) return;
-    
-    let seconds = 0;
-    const timerInterval = setInterval(() => {
-        if (!state.callStartTime) {
-            clearInterval(timerInterval);
-            callDuration.textContent = '';
-            return;
-        }
-        
-        seconds = Math.floor((Date.now() - state.callStartTime) / 1000);
-        callDuration.textContent = formatCallDuration(seconds);
-    }, 1000);
-}
-
-// Add to call history
-function addCallHistory(call) {
-    state.callHistory.push(call);
-    
-    // Keep only the last 50 calls
-    if (state.callHistory.length > 50) {
-        state.callHistory = state.callHistory.slice(-50);
-    }
-    
-    localStorage.setItem('callHistory', JSON.stringify(state.callHistory));
-    renderRecents();
-}
-
-// Logout
-function logout() {
-    // Clean up
-    localStorage.removeItem('user');
-    
-    // Disconnect from signaling server
-    if (state.websocket) {
-        state.websocket.close();
+// Clean up after call ends
+function endCallCleanup() {
+    // Close peer connection
+    if (state.peerConnection) {
+        state.peerConnection.close();
+        state.peerConnection = null;
     }
     
     // Reset state
-    state.user = null;
-    state.isSocketConnected = false;
-    state.onlineUsers.clear();
-    cleanupWebRTC();
+    state.currentCallId = null;
+    state.targetUser = null;
+    state.isInitiator = false;
+    state.iceCandidateQueue = [];
     
-    // Go to auth screen
-    showScreen(authScreen);
-}
-
-// WebRTC setup
-async function setupWebRTC(withVideo = false) {
-    try {
-        // Get user media
-        const constraints = {
-            audio: true,
-            video: withVideo
-        };
-        
-        console.log('Getting user media with constraints:', constraints);
-        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        
-        // Display local video if video is enabled
-        if (withVideo && localVideo && callVideoContainer) {
-            localVideo.srcObject = state.localStream;
-            localVideo.play().catch(error => console.error('Error playing local video:', error));
-            callVideoContainer.classList.remove('hidden');
-        } else if (callVideoContainer) {
-            callVideoContainer.classList.add('hidden');
-        }
-        
-        // Initialize status of buttons
-        const audioTrack = state.localStream.getAudioTracks()[0];
-        if (audioTrack && toggleMuteBtn) {
-            audioTrack.enabled = true;
-            toggleMuteBtn.querySelector('i').className = 'fas fa-microphone';
-            toggleMuteBtn.querySelector('span').textContent = 'Mute';
-        }
-        
-        // Make sure call controls are visible regardless of video state
-        if (ongoingCallActions) {
-            ongoingCallActions.classList.remove('hidden');
-        }
-        
-        // Initialize video button even in audio-only calls
-        // so user can turn on video later
-        if (toggleVideoBtn) {
-            if (withVideo) {
-                const videoTrack = state.localStream.getVideoTracks()[0];
-                if (videoTrack) {
-                    videoTrack.enabled = true;
-                    toggleVideoBtn.querySelector('i').className = 'fas fa-video';
-                    toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
-                }
-            } else {
-                toggleVideoBtn.querySelector('i').className = 'fas fa-video-slash';
-                toggleVideoBtn.querySelector('span').textContent = 'Start Video';
-            }
-        }
-        
-        // If this is an outgoing call, create a peer connection
-        if (state.currentCall && state.currentCall.direction === 'outgoing') {
-            createPeerConnection(state.currentCall.number);
-        }
-    } catch (error) {
-        console.error('Error accessing media devices', error);
-        alert('Could not access camera/microphone. Please check permissions.');
-        endCall();
+    // Hide call UI
+    videoContainer.classList.add('hidden');
+    callControls.classList.add('hidden');
+    hideCallStatus();
+    
+    // Clear remote video
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+        remoteVideo.srcObject = null;
     }
 }
 
-// Create peer connection
-function createPeerConnection(remoteNumber) {
-    // Clean up any existing connection
-    cleanupPeerConnection();
+// Create WebRTC peer connection
+function createPeerConnection() {
+    state.peerConnection = new RTCPeerConnection(rtcConfig);
     
-    // Create a new peer connection
-    state.peerConnection = new RTCPeerConnection(webrtcConfig);
-    console.log('Created peer connection');
-    
-    // Add local stream tracks to the peer connection
+    // Add local stream tracks to the connection
     if (state.localStream) {
-        console.log('Adding local tracks to peer connection');
         state.localStream.getTracks().forEach(track => {
             state.peerConnection.addTrack(track, state.localStream);
-            console.log('Added track to peer connection:', track.kind);
         });
+    } else {
+        console.warn('No local media stream available. Creating connection without audio/video.');
+        showMessage('Warning: No camera/mic access. Call will have no audio/video from your side.');
     }
     
-    // Set up ICE candidate handling
-    state.peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            console.log('Got ICE candidate:', event.candidate);
-            // Send ICE candidate to signaling server
-            sendToSignalingServer({
-                type: 'ice-candidate',
-                candidate: event.candidate,
-                to: remoteNumber
-            });
-        }
-    };
-    
-    // Handle ICE connection state changes
-    state.peerConnection.oniceconnectionstatechange = () => {
-        console.log('ICE connection state change:', state.peerConnection.iceConnectionState);
-        
-        switch (state.peerConnection.iceConnectionState) {
-            case 'connected':
-            case 'completed':
-                updateCallStatus('Connected');
-                if (state.callStartTime === null) {
-                    state.callStartTime = Date.now();
-                    startCallTimer();
-                }
-                break;
-            case 'disconnected':
-                updateCallStatus('Connection lost, trying to reconnect...');
-                break;
-            case 'failed':
-                updateCallStatus('Connection failed');
-                setTimeout(endCall, 2000);
-                break;
-            case 'closed':
-                updateCallStatus('Connection closed');
-                break;
-        }
-    };
-    
-    // Handle track events (receiving remote media)
-    state.peerConnection.ontrack = (event) => {
-        console.log('Remote track received:', event.track.kind);
-        
+    // Handle incoming stream
+    state.peerConnection.ontrack = event => {
         if (event.streams && event.streams[0]) {
-            state.remoteStream = event.streams[0];
+            remoteVideo.srcObject = event.streams[0];
+            videoContainer.classList.remove('hidden');
+            callControls.classList.remove('hidden');
+            hideCallStatus();
+            showMessage('Connected! Call in progress.');
+        }
+    };
+    
+    // Handle ICE candidates
+    state.peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            console.log("ICE candidate:", event.candidate);
             
-            if (remoteVideo) {
-                console.log('Setting remote video source');
-                remoteVideo.srcObject = state.remoteStream;
-                remoteVideo.play().catch(error => console.error('Error playing remote video:', error));
-                
-                // Show video container if it's a video track
-                const hasVideoTrack = state.remoteStream.getVideoTracks().length > 0;
-                if (hasVideoTrack && callVideoContainer) {
-                    console.log('Showing video container for remote video');
-                    callVideoContainer.classList.remove('hidden');
-                    
-                    // Force layout update to ensure video displays properly
-                    setTimeout(() => {
-                        if (remoteVideo) {
-                            remoteVideo.style.display = 'none';
-                            // Force reflow
-                            void remoteVideo.offsetHeight;
-                            remoteVideo.style.display = '';
-                        }
-                    }, 100);
-                }
+            // Send the ICE candidate to the other peer
+            const targetId = state.isInitiator ? state.targetUser.id : state.peerConnection.currentRemoteDescription?.from;
+            
+            if (targetId) {
+                sendToServer({
+                    type: 'webrtc_ice_candidate',
+                    targetId: targetId,
+                    candidate: event.candidate
+                });
             }
+        } else {
+            console.log("All ICE candidates gathered");
+        }
+    };
+    
+    // Handle connection state changes
+    state.peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', state.peerConnection.iceConnectionState);
+        
+        if (state.peerConnection.iceConnectionState === 'connected' || 
+            state.peerConnection.iceConnectionState === 'completed') {
+            showMessage('Call connected!');
+        } else if (state.peerConnection.iceConnectionState === 'disconnected') {
+            showMessage('Call connection interrupted. Trying to reconnect...');
+        } else if (state.peerConnection.iceConnectionState === 'failed') {
+            showError('Call connection failed');
+            setTimeout(endCall, 2000);
+        } else if (state.peerConnection.iceConnectionState === 'closed') {
+            showMessage('Call ended');
         }
     };
     
     return state.peerConnection;
 }
 
-// Create and send WebRTC offer
-async function createAndSendOffer(remoteNumber) {
-    if (!state.peerConnection) {
-        createPeerConnection(remoteNumber);
-    }
-    
+// Send WebRTC offer
+async function sendWebRTCOffer(targetId) {
     try {
-        console.log('Creating WebRTC offer');
-        // Create offer
-        const offer = await state.peerConnection.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: state.currentCall.withVideo
-        });
-        
-        // Set local description
+        const offer = await state.peerConnection.createOffer();
         await state.peerConnection.setLocalDescription(offer);
-        console.log('Set local description with offer');
         
-        // Send offer to signaling server
-        sendToSignalingServer({
-            type: 'offer',
-            offer: state.peerConnection.localDescription,
-            to: remoteNumber,
-            withVideo: state.currentCall.withVideo
+        // Wait for ICE gathering to complete
+        await new Promise(resolve => {
+            if (state.peerConnection.iceGatheringState === 'complete') {
+                resolve();
+            } else {
+                state.peerConnection.addEventListener('icegatheringstatechange', () => {
+                    if (state.peerConnection.iceGatheringState === 'complete') {
+                        resolve();
+                    }
+                });
+                
+                // Fallback in case gathering takes too long
+                setTimeout(resolve, 5000);
+            }
         });
+        
+        // Send the offer to the target
+        sendToServer({
+            type: 'webrtc_offer',
+            targetId: targetId,
+            offer: state.peerConnection.localDescription
+        });
+        
     } catch (error) {
         console.error('Error creating offer:', error);
+        showError('Failed to create call connection: ' + error.message);
     }
 }
 
-// Clean up peer connection
-function cleanupPeerConnection() {
-    if (state.peerConnection) {
-        state.peerConnection.close();
-        state.peerConnection = null;
-    }
-}
-
-// Clean up WebRTC resources
-function cleanupWebRTC() {
-    // Clean up peer connection
-    cleanupPeerConnection();
-    
-    // Clean up local stream
-    if (state.localStream) {
-        state.localStream.getTracks().forEach(track => track.stop());
-        state.localStream = null;
+// Toggle video
+function toggleVideo() {
+    if (!state.localStream) {
+        showMessage('No local video stream available.');
+        return;
     }
     
-    // Clean up remote stream
-    state.remoteStream = null;
-    
-    // Reset video elements
-    if (localVideo) localVideo.srcObject = null;
-    if (remoteVideo) remoteVideo.srcObject = null;
-    
-    // Stop ringtone if playing
-    stopRingtone();
-}
-
-// Helper functions
-function getInitials(name) {
-    if (!name) return '??';
-    return name
-        .split(' ')
-        .map(word => word.charAt(0))
-        .join('')
-        .toUpperCase()
-        .substring(0, 2);
-}
-
-function formatPhoneNumber(number) {
-    // Format as (XXX) XXX-XXXX for US numbers
-    const cleaned = ('' + number).replace(/\D/g, '');
-    const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
-    if (match) {
-        return '(' + match[1] + ') ' + match[2] + '-' + match[3];
-    }
-    return number;
-}
-
-function formatCallTime(timestamp) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === now.toDateString()) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-    } else {
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-}
-
-function formatCallDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = seconds % 60;
-    
-    let formattedTime = '';
-    
-    if (hours > 0) {
-        formattedTime += `${hours}:`;
+    const videoTracks = state.localStream.getVideoTracks();
+    if (videoTracks.length === 0) {
+        showMessage('No video track available.');
+        return;
     }
     
-    formattedTime += `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    
-    return formattedTime;
-}
-
-function getContactNameByNumber(number) {
-    const contact = state.contacts.find(c => c.number === number);
-    return contact ? contact.name : null;
-}
-
-function generateUniqueNumber() {
-    // Generate a random 10-digit number (US format)
-    return '1' + Math.floor(Math.random() * 9000000000 + 1000000000).toString();
-}
-
-// Connect to the WebSocket signaling server
-function connectToSignalingServer() {
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const wsUrl = protocol + window.location.host;
-    
-    console.log('Connecting to signaling server at:', wsUrl);
-    
-    state.websocket = new WebSocket(wsUrl);
-    
-    state.websocket.onopen = () => {
-        console.log('Connected to signaling server');
-        state.isSocketConnected = true;
-        
-        // Login to the signaling server with our user info
-        if (state.user) {
-            sendToSignalingServer({
-                type: 'login',
-                number: state.user.number,
-                name: state.user.fullName
-            });
-        }
-    };
-    
-    state.websocket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('Received message from server:', data.type);
-        
-        switch (data.type) {
-            case 'login-response':
-                handleLoginResponse(data);
-                break;
-            case 'user-status':
-                handleUserStatus(data);
-                break;
-            case 'incoming-call':
-                handleIncomingCall(data);
-                break;
-            case 'call-answered':
-                handleCallAnswered(data);
-                break;
-            case 'ice-candidate':
-                handleRemoteIceCandidate(data);
-                break;
-            case 'offer':
-                handleRemoteOffer(data);
-                break;
-            case 'answer':
-                handleRemoteAnswer(data);
-                break;
-            case 'end-call':
-                handleRemoteEndCall(data);
-                break;
-            default:
-                console.log('Unknown message type:', data.type);
-        }
-    };
-    
-    state.websocket.onclose = () => {
-        console.log('Disconnected from signaling server');
-        state.isSocketConnected = false;
-        
-        // Try to reconnect after a delay
-        setTimeout(() => {
-            if (state.user) {
-                connectToSignalingServer();
-            }
-        }, 5000);
-    };
-    
-    state.websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        state.isSocketConnected = false;
-    };
-}
-
-// Send message to signaling server
-function sendToSignalingServer(data) {
-    if (state.websocket && state.isSocketConnected) {
-        state.websocket.send(JSON.stringify(data));
-    } else {
-        console.error('Cannot send message: WebSocket not connected');
-    }
-}
-
-// Handle login response from server
-function handleLoginResponse(data) {
-    console.log('Login response:', data);
-    if (data.success) {
-        console.log('Successfully logged in to signaling server');
-    } else {
-        console.error('Failed to login to signaling server:', data.message);
-    }
-}
-
-// Handle user status updates
-function handleUserStatus(data) {
-    const { number, online } = data;
-    
-    if (online) {
-        state.onlineUsers.add(number);
-    } else {
-        state.onlineUsers.delete(number);
-    }
-    
-    // Update UI to show online status for contacts
-    updateContactsOnlineStatus();
-}
-
-// Update contacts UI to show online status
-function updateContactsOnlineStatus() {
-    const contactItems = document.querySelectorAll('.contact-item');
-    
-    contactItems.forEach(item => {
-        const numberElement = item.querySelector('.contact-info p');
-        if (numberElement) {
-            const number = numberElement.textContent.replace(/\D/g, '');
-            const statusIndicator = item.querySelector('.status-indicator') || document.createElement('div');
-            
-            if (!statusIndicator.classList.contains('status-indicator')) {
-                statusIndicator.className = 'status-indicator';
-                item.querySelector('.contact-info').appendChild(statusIndicator);
-            }
-            
-            statusIndicator.className = 'status-indicator';
-            if (state.onlineUsers.has(number)) {
-                statusIndicator.classList.add('online');
-                statusIndicator.title = 'Online';
-            } else {
-                statusIndicator.classList.add('offline');
-                statusIndicator.title = 'Offline';
-            }
-        }
+    state.videoEnabled = !state.videoEnabled;
+    videoTracks.forEach(track => {
+        track.enabled = state.videoEnabled;
     });
+    toggleVideoBtn.textContent = state.videoEnabled ? 'Toggle Video' : 'Enable Video';
+    updateMediaStatus();
 }
 
-// Handle incoming call from server
-function handleIncomingCall(data) {
-    console.log('Incoming call from:', data.from, data.fromName);
+// Toggle audio
+function toggleAudio() {
+    if (!state.localStream) {
+        showMessage('No local audio stream available.');
+        return;
+    }
     
-    // Store current call information
-    state.currentCall = {
-        number: data.from,
-        name: data.fromName || getContactNameByNumber(data.from) || 'Unknown',
-        direction: 'incoming',
-        withVideo: data.withVideo || false
-    };
+    const audioTracks = state.localStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+        showMessage('No audio track available.');
+        return;
+    }
     
-    // Update incoming call alert
-    if (incomingCallerName) incomingCallerName.textContent = state.currentCall.name;
-    if (incomingCallerNumber) incomingCallerNumber.textContent = formatPhoneNumber(state.currentCall.number);
-    if (incomingCallerInitials) incomingCallerInitials.textContent = getInitials(state.currentCall.name);
-    
-    // Show incoming call alert
-    if (incomingCallAlert) incomingCallAlert.classList.remove('hidden');
-    
-    // Play ringtone
-    playRingtone();
+    state.audioEnabled = !state.audioEnabled;
+    audioTracks.forEach(track => {
+        track.enabled = state.audioEnabled;
+    });
+    toggleAudioBtn.textContent = state.audioEnabled ? 'Toggle Audio' : 'Enable Audio';
+    updateMediaStatus();
 }
 
-// Handle call answered response
-function handleCallAnswered(data) {
-    console.log('Call answered:', data);
+// Show call status
+function showCallStatus(message, showLoader = false) {
+    callStatus.classList.remove('hidden');
+    callStatusMessage.textContent = message;
     
-    // If call was accepted, create and send an offer
-    if (data.accepted) {
-        updateCallStatus('Call accepted, establishing connection...');
-        
-        // Create WebRTC offer
-        createAndSendOffer(state.currentCall.number);
+    if (showLoader) {
+        callLoader.classList.remove('hidden');
     } else {
-        // Call was rejected
-        updateCallStatus('Call rejected');
-        
-        // Add to call history
-        addCallHistory({
-            number: state.currentCall.number,
-            direction: 'outgoing',
-            type: 'rejected',
-            timestamp: Date.now(),
-            duration: 0
-        });
-        
-        // Clean up and return to main screen after a delay
-        setTimeout(() => {
-            cleanupWebRTC();
-            state.currentCall = null;
-            showScreen(mainScreen);
-        }, 1500);
+        callLoader.classList.add('hidden');
     }
 }
 
-// Handle remote ICE candidate
-function handleRemoteIceCandidate(data) {
-    console.log('Received remote ICE candidate');
-    
-    if (state.peerConnection && data.candidate) {
-        try {
-            state.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-                .catch(error => console.error('Error adding received ice candidate', error));
-        } catch (error) {
-            console.error('Error adding received ice candidate', error);
-        }
+// Hide call status
+function hideCallStatus() {
+    callStatus.classList.add('hidden');
+}
+
+// Show error message
+function showError(message) {
+    statusMessage.textContent = message;
+    statusMessage.style.color = '#e74c3c';
+}
+
+// Show regular message
+function showMessage(message) {
+    statusMessage.textContent = message;
+    statusMessage.style.color = '#333';
+}
+
+// Disable app functionality
+function disableApp() {
+    loginBtn.disabled = true;
+    searchBtn.disabled = true;
+    callBtn.disabled = true;
+    acceptCallBtn.disabled = true;
+    rejectCallBtn.disabled = true;
+    hangupBtn.disabled = true;
+    toggleVideoBtn.disabled = true;
+    toggleAudioBtn.disabled = true;
+}
+
+// Send message to WebSocket server
+function sendToServer(message) {
+    if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.socket.send(JSON.stringify(message));
+    } else {
+        showError('Not connected to server');
     }
 }
 
-// Handle remote offer
-async function handleRemoteOffer(data) {
-    console.log('Received remote offer');
-    
-    if (!state.peerConnection) {
-        // Create new peer connection
-        createPeerConnection(state.currentCall.number);
+// Sound functions
+const sounds = {};
+
+function playSound(name) {
+    if (sounds[name]) {
+        sounds[name].play();
+        return;
     }
     
-    try {
-        // Set remote description
-        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-        console.log('Set remote description with offer');
-        
-        // Update our call's video state to match the offer
-        if (data.withVideo && !state.currentCall.withVideo) {
-            state.currentCall.withVideo = true;
-            // Try to add video if we don't have it yet
-            if (state.localStream && state.localStream.getVideoTracks().length === 0) {
-                try {
-                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    const videoTrack = videoStream.getVideoTracks()[0];
-                    if (videoTrack) {
-                        state.localStream.addTrack(videoTrack);
-                        state.peerConnection.addTrack(videoTrack, state.localStream);
-                        
-                        if (localVideo) {
-                            localVideo.srcObject = state.localStream;
-                            localVideo.play().catch(error => console.error('Error playing local video:', error));
-                        }
-                        
-                        if (callVideoContainer) {
-                            callVideoContainer.classList.remove('hidden');
-                        }
-                        
-                        if (toggleVideoBtn) {
-                            toggleVideoBtn.querySelector('i').className = 'fas fa-video';
-                            toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
-                        }
-                    }
-                } catch (error) {
-                    console.error('Failed to add video:', error);
-                }
-            }
-        }
-        
-        // Create answer
-        const answer = await state.peerConnection.createAnswer();
-        await state.peerConnection.setLocalDescription(answer);
-        console.log('Created and set local answer');
-        
-        // Send answer back
-        sendToSignalingServer({
-            type: 'answer',
-            answer: state.peerConnection.localDescription,
-            to: data.from,
-            withVideo: state.currentCall.withVideo
-        });
-    } catch (error) {
-        console.error('Error handling remote offer:', error);
+    // Create ringtone sound
+    if (name === 'ringtone') {
+        const audio = new Audio();
+        audio.src = 'data:audio/wav;base64,UklGRigBAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQBAADpSW1vSS5nsUkB/0kF/0kJlkvS/01l/1Kk/0v//0wPY00BIE0JDU4kpVAmb1Eo/1IqZ1QsHVQt4VQuaFMvE1Iv0Fkw0mcx1nQyd4EzL4Yz04cz34gy6IUx6IEw54Ev3X8u2X4t2H4s2X8s3IEs4YQs5IYs5ocs6Ios64ws7I4s7Y8t7pAt7pAt7o8t7Y4t7I0t6oss6Ios54cs5oYs5YUs44Ms4IAs3X4s2nss13cs1nUs03Is0G8szm0symstyWotyGkux2kux2kuwGYpuWMosV8npFomklUli08kfUkjcUMibj4haDogYjQfWy8eUiseRCYdPSIdNx8dMRwdLRkdKRYdtA4CnwQBkAEA';
+        audio.loop = true;
+        sounds[name] = audio;
+        audio.play();
     }
 }
 
-// Handle remote answer
-async function handleRemoteAnswer(data) {
-    console.log('Received remote answer');
-    
-    if (state.peerConnection) {
-        try {
-            await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-        } catch (error) {
-            console.error('Error setting remote description:', error);
-        }
+function stopSound(name) {
+    if (sounds[name]) {
+        sounds[name].pause();
+        sounds[name].currentTime = 0;
     }
-}
-
-// Handle remote end call
-function handleRemoteEndCall(data) {
-    console.log('Remote peer ended the call');
-    
-    // Update UI
-    updateCallStatus('Call ended by remote peer');
-    
-    // End the call on our side
-    endCall();
-}
-
-// Play ringtone
-function playRingtone() {
-    // Create audio element for ringtone
-    const ringtone = new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_c518b68cfd.mp3?filename=deduction-528.mp3');
-    ringtone.loop = true;
-    ringtone.play().catch(error => console.error('Error playing ringtone:', error));
-    
-    // Store ringtone reference for stopping later
-    state.ringtone = ringtone;
-    
-    // Stop ringtone after 30 seconds if not answered
-    setTimeout(() => {
-        stopRingtone();
-    }, 30000);
-}
-
-// Stop ringtone
-function stopRingtone() {
-    if (state.ringtone) {
-        state.ringtone.pause();
-        state.ringtone.currentTime = 0;
-        state.ringtone = null;
-    }
-}
-
-// Initialize the app when the DOM is loaded
-document.addEventListener('DOMContentLoaded', initApp);
-
-// For demo purposes: Add a function to trigger incoming call simulation
-window.simulateIncomingCall = simulateIncomingCall; 
+} 

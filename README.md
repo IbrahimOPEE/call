@@ -1,129 +1,77 @@
-# StarLight - Modern Calling App
+# P2P Video Calling App
 
-A sleek, modern calling application built with WebRTC technology for real-time communication.
+A simple peer-to-peer video calling application using WebRTC. This app allows direct communication between two devices without requiring an external signaling server.
 
 ## Features
 
-- User authentication with email signup
-- Unique phone number assignment
-- Contacts management
-- Call history with recent calls
-- Audio and video calling
-- Real-time user presence indicators
-- WebSocket signaling for direct number-to-number calling
-- Modern mobile-friendly UI
-- Local storage for user data persistence
+- Direct peer-to-peer connection using WebRTC
+- Video and audio streaming
+- Simple role-based connection (host/client)
+- Manual exchange of connection details with clipboard support
+- Toggle video/audio during the call
+- Responsive design
 
-## Technology Stack
+## How to Use
 
-- HTML5, CSS3, JavaScript
-- WebRTC for real-time communication
-- WebSocket for signaling and real-time presence
-- Express.js for serving the application
-- Local storage for data persistence
+### Option 1: Run with Node.js (recommended)
 
-## Getting Started
+1. Make sure you have [Node.js](https://nodejs.org/) installed
+2. Open a terminal/command prompt in the project directory
+3. Run the server with: `node server.js`
+4. Open `http://localhost:8000` in your browser
 
-### Prerequisites
+### Option 2: Run with Python server
 
-- Node.js installed on your machine
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+1. Open a terminal/command prompt in the project directory
+2. Start a Python HTTP server:
+   - Python 3: `python -m http.server 8000`
+   - Python 2: `python -m SimpleHTTPServer 8000`
+3. Open `http://localhost:8000` in your browser
 
-### Installation
+### Option 3: Use any other web server
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/starlight-call.git
-   cd starlight-call
-   ```
+Place all files in a directory served by your web server and navigate to that location.
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+## Step-by-Step Connection Guide
 
-3. Start the server:
-   ```
-   npm start
-   ```
+1. **Start the application on both devices**:
+   - Grant camera and microphone permissions when prompted
+   - Both users will see their camera feed in the local video window
 
-4. Open your browser and navigate to:
-   ```
-   http://localhost:8000
-   ```
+2. **Choose roles**:
+   - On the first device, click "Be Host"
+   - On the second device, click "Be Client"
 
-## Usage
+3. **Exchange connection information**:
+   - The Host will automatically generate an "offer" code
+   - The Host should click "Copy to Clipboard" and send this entire code to the Client (via message, email, etc.)
+   - The Client pastes this code (using "Paste from Clipboard" or manually) and clicks "Generate Answer"
+   - The Client's answer code will appear - click "Copy to Clipboard" and send it to the Host
+   - The Host pastes this answer code and clicks "Connect"
 
-1. **Sign Up or Log In**:
-   - Create a new account with your email and password
-   - A unique StarLight number will be assigned to you
+4. **During the call**:
+   - Both parties should now see each other's video
+   - Use the "Toggle Video" button to turn video on/off
+   - Use the "Toggle Audio" button to mute/unmute
+   - Click "Hang Up" to end the call
 
-2. **Manage Contacts**:
-   - Add contacts using the + button on the contacts tab
-   - Call contacts directly from the contacts list
-   - Online/offline status is shown for each contact
+## Troubleshooting
 
-3. **Make Calls**:
-   - Use the keypad to dial StarLight numbers
-   - Click on contacts to call them
-   - Toggle between audio and video calls
-   - Calls connect automatically through the signaling server
+- **JSON Parsing Errors**: Make sure you're copying and pasting the entire code without any modifications
+- **Empty Video**: Check camera permissions and ensure your browser supports WebRTC
+- **Connection Fails**: Both devices might be behind strict NATs or firewalls
+- **Offer/Answer Doesn't Work**: Try refreshing the page and starting over
 
-4. **Receive Calls**:
-   - Incoming calls show caller information
-   - Accept or decline calls with a tap
-   - Caller's name is displayed if they're in your contacts
+## Browser Compatibility
 
-5. **View Call History**:
-   - Check your recent calls in the recents tab
-   - See missed, incoming, and outgoing calls
-   - Call back directly from the recents list
+This app works best on modern browsers that support WebRTC:
+- Chrome (recent versions)
+- Firefox (recent versions)
+- Edge (recent versions)
+- Safari (recent versions)
 
-## Direct Connection
+## Network Requirements
 
-The application now uses WebSocket signaling to enable direct calling using StarLight numbers:
-
-1. **Real-time Presence**:
-   - Contacts show online/offline status in real-time
-   - Only online users can receive calls
-
-2. **Number-based Calling**:
-   - Dial any StarLight number or select from contacts
-   - No need to exchange codes manually
-   - Calls are routed automatically through the signaling server
-
-3. **Call Flow**:
-   - Caller initiates call to recipient's StarLight number
-   - Recipient receives notification of incoming call
-   - When accepted, WebRTC connection is established automatically
-   - Media (audio/video) flows directly between peers
-
-## Demo Features
-
-For demonstration purposes, you can trigger an incoming call simulation:
-- Open your browser console and type `simulateIncomingCall()`
-
-## Development
-
-For development with automatic server restart:
-```
-npm run dev
-```
-
-## Deployment
-
-This application requires a hosting service that supports WebSockets:
-
-1. **Render/Railway/DigitalOcean**:
-   - These platforms support WebSockets out of the box
-   - Deploy as a Node.js application
-
-2. **Heroku**:
-   - Follow Heroku's Node.js deployment guide
-   - WebSockets are supported on all dynos
-
-NOTE: Simple static hosting services like GitHub Pages won't work because WebSocket support is required.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 
+- For best results, both devices should be on the same local network
+- If on different networks, make sure ports are not blocked by firewalls
+- Only uses Google's free STUN server for NAT traversal 
