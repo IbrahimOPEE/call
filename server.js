@@ -116,7 +116,7 @@ wss.on('connection', (ws) => {
 
     // Handle call request
     function handleCallRequest(ws, data) {
-        const { from, to } = data;
+        const { from, to, withVideo } = data;
         
         // Check if recipient is online
         if (!activeUsers.has(to)) {
@@ -133,13 +133,14 @@ wss.on('connection', (ws) => {
         recipient.ws.send(JSON.stringify({
             type: 'incoming-call',
             from: from,
-            fromName: activeUsers.get(from)?.name || 'Unknown'
+            fromName: activeUsers.get(from)?.name || 'Unknown',
+            withVideo: withVideo || false
         }));
     }
 
     // Handle call response
     function handleCallResponse(ws, data) {
-        const { from, to, accepted } = data;
+        const { from, to, accepted, withVideo } = data;
         
         // Check if caller is online
         if (!activeUsers.has(to)) {
@@ -151,7 +152,8 @@ wss.on('connection', (ws) => {
         caller.ws.send(JSON.stringify({
             type: 'call-answered',
             from: from,
-            accepted: accepted
+            accepted: accepted,
+            withVideo: withVideo || false
         }));
     }
 
@@ -175,7 +177,7 @@ wss.on('connection', (ws) => {
 
     // Handle offer
     function handleOffer(ws, data) {
-        const { offer, to } = data;
+        const { offer, to, withVideo } = data;
         
         // Check if recipient is online
         if (!activeUsers.has(to)) {
@@ -187,13 +189,14 @@ wss.on('connection', (ws) => {
         recipient.ws.send(JSON.stringify({
             type: 'offer',
             offer: offer,
-            from: userNumber
+            from: userNumber,
+            withVideo: withVideo || false
         }));
     }
 
     // Handle answer
     function handleAnswer(ws, data) {
-        const { answer, to } = data;
+        const { answer, to, withVideo } = data;
         
         // Check if recipient is online
         if (!activeUsers.has(to)) {
@@ -205,7 +208,8 @@ wss.on('connection', (ws) => {
         recipient.ws.send(JSON.stringify({
             type: 'answer',
             answer: answer,
-            from: userNumber
+            from: userNumber,
+            withVideo: withVideo || false
         }));
     }
 

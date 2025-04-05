@@ -545,7 +545,10 @@ function initiateCall(number, withVideo = false) {
 function acceptIncomingCall() {
     if (!state.currentCall) return;
     
-    const { number, name } = state.currentCall;
+    const { number, name, withVideo } = state.currentCall;
+    
+    // Stop ringtone
+    stopRingtone();
     
     // Hide incoming call alert
     if (incomingCallAlert) incomingCallAlert.classList.add('hidden');
@@ -559,8 +562,8 @@ function acceptIncomingCall() {
     if (incomingCallActions) incomingCallActions.classList.add('hidden');
     if (ongoingCallActions) ongoingCallActions.classList.remove('hidden');
     
-    // Initialize WebRTC
-    setupWebRTC(false);
+    // Initialize WebRTC - use the same video mode as the caller
+    setupWebRTC(withVideo);
     
     // Create peer connection
     createPeerConnection(number);
@@ -570,7 +573,8 @@ function acceptIncomingCall() {
         type: 'call-response',
         from: state.user.number,
         to: number,
-        accepted: true
+        accepted: true,
+        withVideo: withVideo
     });
     
     // Add to call history
@@ -683,15 +687,58 @@ function toggleMute() {
 // Toggle video
 function toggleVideo() {
     if (state.localStream) {
-        const videoTracks = state.localStream.getVideoTracks();
-        if (videoTracks.length > 0 && toggleVideoBtn && callVideoContainer) {
+        let videoTracks = state.localStream.getVideoTracks();
+        
+        // If no video tracks and trying to enable video
+        if (videoTracks.length === 0) {
+            // Try to add video
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(videoStream => {
+                    const videoTrack = videoStream.getVideoTracks()[0];
+                    
+                    // Add the video track to our local stream
+                    state.localStream.addTrack(videoTrack);
+                    
+                    // Add the track to the peer connection
+                    if (state.peerConnection) {
+                        state.peerConnection.addTrack(videoTrack, state.localStream);
+                    }
+                    
+                    // Display local video
+                    if (localVideo) {
+                        localVideo.srcObject = state.localStream;
+                        localVideo.play().catch(error => console.error('Error playing local video:', error));
+                    }
+                    
+                    // Show video container
+                    if (callVideoContainer) {
+                        callVideoContainer.classList.remove('hidden');
+                    }
+                    
+                    // Update button state
+                    if (toggleVideoBtn) {
+                        toggleVideoBtn.querySelector('i').className = 'fas fa-video';
+                        toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
+                    }
+                    
+                    // Update call state
+                    if (state.currentCall) {
+                        state.currentCall.withVideo = true;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error adding video track:', error);
+                    alert('Could not access camera. Please check permissions.');
+                });
+            return;
+        }
+        
+        // If there are video tracks, toggle them
+        if (videoTracks.length > 0 && toggleVideoBtn) {
             const videoEnabled = !videoTracks[0].enabled;
             videoTracks[0].enabled = videoEnabled;
             toggleVideoBtn.querySelector('i').className = videoEnabled ? 'fas fa-video' : 'fas fa-video-slash';
             toggleVideoBtn.querySelector('span').textContent = videoEnabled ? 'Stop Video' : 'Start Video';
-            
-            // Show/hide video container
-            callVideoContainer.classList.toggle('hidden', !videoEnabled);
         }
     }
 }
@@ -771,11 +818,13 @@ async function setupWebRTC(withVideo = false) {
             video: withVideo
         };
         
+        console.log('Getting user media with constraints:', constraints);
         state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
         
         // Display local video if video is enabled
         if (withVideo && localVideo && callVideoContainer) {
             localVideo.srcObject = state.localStream;
+            localVideo.play().catch(error => console.error('Error playing local video:', error));
             callVideoContainer.classList.remove('hidden');
         } else if (callVideoContainer) {
             callVideoContainer.classList.add('hidden');
@@ -789,12 +838,24 @@ async function setupWebRTC(withVideo = false) {
             toggleMuteBtn.querySelector('span').textContent = 'Mute';
         }
         
-        if (withVideo) {
-            const videoTrack = state.localStream.getVideoTracks()[0];
-            if (videoTrack && toggleVideoBtn) {
-                videoTrack.enabled = true;
-                toggleVideoBtn.querySelector('i').className = 'fas fa-video';
-                toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
+        // Make sure call controls are visible regardless of video state
+        if (ongoingCallActions) {
+            ongoingCallActions.classList.remove('hidden');
+        }
+        
+        // Initialize video button even in audio-only calls
+        // so user can turn on video later
+        if (toggleVideoBtn) {
+            if (withVideo) {
+                const videoTrack = state.localStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.enabled = true;
+                    toggleVideoBtn.querySelector('i').className = 'fas fa-video';
+                    toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
+                }
+            } else {
+                toggleVideoBtn.querySelector('i').className = 'fas fa-video-slash';
+                toggleVideoBtn.querySelector('span').textContent = 'Start Video';
             }
         }
         
@@ -816,17 +877,21 @@ function createPeerConnection(remoteNumber) {
     
     // Create a new peer connection
     state.peerConnection = new RTCPeerConnection(webrtcConfig);
+    console.log('Created peer connection');
     
     // Add local stream tracks to the peer connection
     if (state.localStream) {
+        console.log('Adding local tracks to peer connection');
         state.localStream.getTracks().forEach(track => {
             state.peerConnection.addTrack(track, state.localStream);
+            console.log('Added track to peer connection:', track.kind);
         });
     }
     
     // Set up ICE candidate handling
     state.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+            console.log('Got ICE candidate:', event.candidate);
             // Send ICE candidate to signaling server
             sendToSignalingServer({
                 type: 'ice-candidate',
@@ -844,6 +909,10 @@ function createPeerConnection(remoteNumber) {
             case 'connected':
             case 'completed':
                 updateCallStatus('Connected');
+                if (state.callStartTime === null) {
+                    state.callStartTime = Date.now();
+                    startCallTimer();
+                }
                 break;
             case 'disconnected':
                 updateCallStatus('Connection lost, trying to reconnect...');
@@ -866,11 +935,25 @@ function createPeerConnection(remoteNumber) {
             state.remoteStream = event.streams[0];
             
             if (remoteVideo) {
+                console.log('Setting remote video source');
                 remoteVideo.srcObject = state.remoteStream;
+                remoteVideo.play().catch(error => console.error('Error playing remote video:', error));
                 
                 // Show video container if it's a video track
-                if (event.track.kind === 'video' && callVideoContainer) {
+                const hasVideoTrack = state.remoteStream.getVideoTracks().length > 0;
+                if (hasVideoTrack && callVideoContainer) {
+                    console.log('Showing video container for remote video');
                     callVideoContainer.classList.remove('hidden');
+                    
+                    // Force layout update to ensure video displays properly
+                    setTimeout(() => {
+                        if (remoteVideo) {
+                            remoteVideo.style.display = 'none';
+                            // Force reflow
+                            void remoteVideo.offsetHeight;
+                            remoteVideo.style.display = '';
+                        }
+                    }, 100);
                 }
             }
         }
@@ -886,20 +969,23 @@ async function createAndSendOffer(remoteNumber) {
     }
     
     try {
+        console.log('Creating WebRTC offer');
         // Create offer
         const offer = await state.peerConnection.createOffer({
             offerToReceiveAudio: true,
-            offerToReceiveVideo: true
+            offerToReceiveVideo: state.currentCall.withVideo
         });
         
         // Set local description
         await state.peerConnection.setLocalDescription(offer);
+        console.log('Set local description with offer');
         
         // Send offer to signaling server
         sendToSignalingServer({
             type: 'offer',
             offer: state.peerConnection.localDescription,
-            to: remoteNumber
+            to: remoteNumber,
+            withVideo: state.currentCall.withVideo
         });
     } catch (error) {
         console.error('Error creating offer:', error);
@@ -1142,7 +1228,7 @@ function handleIncomingCall(data) {
         number: data.from,
         name: data.fromName || getContactNameByNumber(data.from) || 'Unknown',
         direction: 'incoming',
-        withVideo: false
+        withVideo: data.withVideo || false
     };
     
     // Update incoming call alert
@@ -1215,16 +1301,51 @@ async function handleRemoteOffer(data) {
     try {
         // Set remote description
         await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        console.log('Set remote description with offer');
+        
+        // Update our call's video state to match the offer
+        if (data.withVideo && !state.currentCall.withVideo) {
+            state.currentCall.withVideo = true;
+            // Try to add video if we don't have it yet
+            if (state.localStream && state.localStream.getVideoTracks().length === 0) {
+                try {
+                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const videoTrack = videoStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        state.localStream.addTrack(videoTrack);
+                        state.peerConnection.addTrack(videoTrack, state.localStream);
+                        
+                        if (localVideo) {
+                            localVideo.srcObject = state.localStream;
+                            localVideo.play().catch(error => console.error('Error playing local video:', error));
+                        }
+                        
+                        if (callVideoContainer) {
+                            callVideoContainer.classList.remove('hidden');
+                        }
+                        
+                        if (toggleVideoBtn) {
+                            toggleVideoBtn.querySelector('i').className = 'fas fa-video';
+                            toggleVideoBtn.querySelector('span').textContent = 'Stop Video';
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to add video:', error);
+                }
+            }
+        }
         
         // Create answer
         const answer = await state.peerConnection.createAnswer();
         await state.peerConnection.setLocalDescription(answer);
+        console.log('Created and set local answer');
         
         // Send answer back
         sendToSignalingServer({
             type: 'answer',
             answer: state.peerConnection.localDescription,
-            to: state.currentCall.number
+            to: data.from,
+            withVideo: state.currentCall.withVideo
         });
     } catch (error) {
         console.error('Error handling remote offer:', error);
