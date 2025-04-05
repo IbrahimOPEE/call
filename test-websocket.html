@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarLight WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        pre {
+            background-color: #272822;
+            color: #f8f8f2;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #8e44ad;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #6c3483;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>StarLight WebSocket Connection Test</h1>
+    
+    <div class="container">
+        <h2>Connection Status</h2>
+        <div id="connectionStatus" class="status info">Not connected</div>
+        
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+    
+    <div class="container">
+        <h2>Send Message</h2>
+        <div>
+            <input id="testNumber" type="text" placeholder="StarLight Number" value="SL-12345">
+            <input id="testName" type="text" placeholder="Name" value="Test User">
+            <button id="loginBtn" disabled>Send Login</button>
+        </div>
+        
+        <h3>Manual Message</h3>
+        <div>
+            <textarea id="messageInput" rows="5" style="width: 100%;" placeholder='{"type": "custom-message", "data": "test"}'></textarea>
+            <button id="sendBtn" disabled>Send Message</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Messages</h2>
+        <button id="clearBtn">Clear Log</button>
+        <pre id="messageLog">No messages yet</pre>
+    </div>
+    
+    <script>
+        let socket = null;
+        
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const loginBtn = document.getElementById('loginBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const messageLog = document.getElementById('messageLog');
+        const messageInput = document.getElementById('messageInput');
+        const testNumber = document.getElementById('testNumber');
+        const testName = document.getElementById('testName');
+        
+        function updateConnectionStatus(status, isSuccess = true) {
+            connectionStatus.textContent = status;
+            connectionStatus.className = 'status ' + (isSuccess ? 'success' : 'error');
+        }
+        
+        function logMessage(message, isOutgoing = false) {
+            const timestamp = new Date().toISOString();
+            const prefix = isOutgoing ? '➡️ SENT' : '⬅️ RECEIVED';
+            
+            let formattedMessage;
+            try {
+                // Try to format as JSON if it's a JSON string
+                if (typeof message === 'string') {
+                    formattedMessage = JSON.stringify(JSON.parse(message), null, 2);
+                } else {
+                    formattedMessage = JSON.stringify(message, null, 2);
+                }
+            } catch (e) {
+                // If not valid JSON, just use the string
+                formattedMessage = message;
+            }
+            
+            const logEntry = `[${timestamp}] ${prefix}:\n${formattedMessage}\n\n`;
+            
+            messageLog.textContent = logEntry + messageLog.textContent;
+        }
+        
+        connectBtn.addEventListener('click', () => {
+            if (socket) {
+                logMessage('Socket already exists. Disconnecting first.', true);
+                socket.close();
+            }
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const wsUrl = protocol + window.location.host;
+            
+            logMessage(`Connecting to ${wsUrl}...`, true);
+            updateConnectionStatus('Connecting...', true);
+            
+            try {
+                socket = new WebSocket(wsUrl);
+                
+                socket.onopen = () => {
+                    updateConnectionStatus('Connected', true);
+                    logMessage('WebSocket connection established', true);
+                    
+                    // Enable controls
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    loginBtn.disabled = false;
+                    sendBtn.disabled = false;
+                };
+                
+                socket.onmessage = (event) => {
+                    logMessage(event.data);
+                };
+                
+                socket.onclose = () => {
+                    updateConnectionStatus('Disconnected', false);
+                    logMessage('WebSocket connection closed', true);
+                    
+                    // Disable controls
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    loginBtn.disabled = true;
+                    sendBtn.disabled = true;
+                    
+                    socket = null;
+                };
+                
+                socket.onerror = (error) => {
+                    updateConnectionStatus('Error: ' + (error.message || 'Unknown error'), false);
+                    logMessage('WebSocket error: ' + (error.message || 'Unknown error'), true);
+                };
+            } catch (error) {
+                updateConnectionStatus('Connection failed: ' + error.message, false);
+                logMessage('Connection failed: ' + error.message, true);
+            }
+        });
+        
+        disconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                logMessage('Disconnecting...', true);
+                socket.close();
+            }
+        });
+        
+        loginBtn.addEventListener('click', () => {
+            if (!socket) {
+                updateConnectionStatus('Not connected', false);
+                return;
+            }
+            
+            const number = testNumber.value.trim();
+            const name = testName.value.trim();
+            
+            if (!number || !name) {
+                alert('Please enter both StarLight number and name');
+                return;
+            }
+            
+            const loginMessage = {
+                type: 'login',
+                number: number,
+                name: name
+            };
+            
+            logMessage(loginMessage, true);
+            socket.send(JSON.stringify(loginMessage));
+        });
+        
+        sendBtn.addEventListener('click', () => {
+            if (!socket) {
+                updateConnectionStatus('Not connected', false);
+                return;
+            }
+            
+            const message = messageInput.value.trim();
+            
+            if (!message) {
+                alert('Please enter a message to send');
+                return;
+            }
+            
+            try {
+                // Try to parse as JSON to validate
+                const jsonMessage = JSON.parse(message);
+                logMessage(jsonMessage, true);
+                socket.send(message);
+            } catch (e) {
+                alert('Invalid JSON: ' + e.message);
+            }
+        });
+        
+        clearBtn.addEventListener('click', () => {
+            messageLog.textContent = 'No messages yet';
+        });
+    </script>
+</body>
+</html> 

@@ -53,6 +53,15 @@ const incomingCallerInitials = document.getElementById('incomingCallerInitials')
 const acceptCallBtn = document.getElementById('alertAcceptBtn');
 const rejectCallBtn = document.getElementById('alertRejectBtn');
 
+// WebRTC configuration
+const webrtcConfig = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+    ]
+};
+
 // Global state
 const state = {
     user: null,
@@ -65,7 +74,11 @@ const state = {
     callStartTime: null,
     currentTab: 'contacts',
     videoEnabled: true,
-    audioEnabled: true
+    audioEnabled: true,
+    peerConnection: null,
+    websocket: null,
+    onlineUsers: new Set(),
+    isSocketConnected: false
 };
 
 // Initialize the app
@@ -79,6 +92,7 @@ function initApp() {
         if (savedUser) {
             state.user = JSON.parse(savedUser);
             loadUserData();
+            connectToSignalingServer();
             showScreen(mainScreen);
         } else {
             showScreen(authScreen);
@@ -212,60 +226,69 @@ function initEventListeners() {
         });
     }
 
-    // Keypad listeners
+    // Add event listeners for keypad buttons
     const keypadBtns = document.querySelectorAll('.keypad-btn');
-    if (keypadBtns.length > 0) {
-        keypadBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const key = btn.getAttribute('data-key');
-                if (keypadInput) keypadInput.value += key;
-            });
+    keypadBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = btn.getAttribute('data-key');
+            const keypadInput = document.getElementById('keypadInput');
+            if (keypadInput) {
+                keypadInput.value += key;
+            }
         });
-    }
+    });
 
+    // Add event listener for keypad clear button
     const keypadClearBtn = document.getElementById('keypadClearBtn');
     if (keypadClearBtn) {
         keypadClearBtn.addEventListener('click', () => {
-            if (keypadInput) keypadInput.value = keypadInput.value.slice(0, -1);
-        });
-    }
-
-    const keypadCallBtn = document.getElementById('keypadCallBtn');
-    if (keypadCallBtn) {
-        keypadCallBtn.addEventListener('click', () => {
-            if (keypadInput && keypadInput.value) {
-                initiateCall(keypadInput.value);
+            const keypadInput = document.getElementById('keypadInput');
+            if (keypadInput && keypadInput.value.length > 0) {
+                keypadInput.value = keypadInput.value.slice(0, -1);
             }
         });
     }
 
-    // Call screen listeners
+    // Add event listener for keypad call button
+    const keypadCallBtn = document.getElementById('keypadCallBtn');
+    if (keypadCallBtn) {
+        keypadCallBtn.addEventListener('click', () => {
+            const keypadInput = document.getElementById('keypadInput');
+            if (keypadInput && keypadInput.value.trim()) {
+                const number = keypadInput.value.trim();
+                initiateCall(number);
+                keypadInput.value = '';
+            }
+        });
+    }
+
+    // Call screen action listeners
     if (toggleMuteBtn) {
         toggleMuteBtn.addEventListener('click', toggleMute);
     }
-    
+
     if (toggleVideoBtn) {
         toggleVideoBtn.addEventListener('click', toggleVideo);
     }
-    
+
     if (toggleSpeakerBtn) {
         toggleSpeakerBtn.addEventListener('click', toggleSpeaker);
     }
-    
+
     if (endCallBtn) {
         endCallBtn.addEventListener('click', endCall);
     }
 
-    // Incoming call listeners
+    // Incoming call action listeners
     if (acceptCallBtn) {
         acceptCallBtn.addEventListener('click', acceptIncomingCall);
     }
-    
+
     if (rejectCallBtn) {
         rejectCallBtn.addEventListener('click', rejectIncomingCall);
     }
 
-    // Logout
+    // User logout
     if (logoutBtn) {
         logoutBtn.addEventListener('click', logout);
     }
@@ -284,6 +307,7 @@ function handleLogin(e) {
         state.user = user;
         localStorage.setItem('user', JSON.stringify(user));
         loadUserData();
+        connectToSignalingServer();
         showScreen(mainScreen);
     } else {
         if (authMessage) authMessage.textContent = 'Invalid email or password';
@@ -474,6 +498,14 @@ function initiateCall(number, withVideo = false) {
     // Find contact name if available
     const contactName = getContactNameByNumber(number) || 'Unknown';
     
+    // Set current call information
+    state.currentCall = {
+        number: number,
+        name: contactName,
+        direction: 'outgoing',
+        withVideo: withVideo
+    };
+    
     // Set call screen information
     if (callerName) callerName.textContent = contactName;
     if (callerNumber) callerNumber.textContent = formatPhoneNumber(number);
@@ -486,56 +518,42 @@ function initiateCall(number, withVideo = false) {
     // Initialize WebRTC
     setupWebRTC(withVideo);
     
-    // Add to call history
-    addCallHistory({
-        number,
-        direction: 'outgoing',
-        type: 'completed',
-        timestamp: Date.now(),
-        duration: 0 // Will be updated when call ends
-    });
-    
     // Show call screen
     showScreen(callScreen);
     
     // Update call status
     updateCallStatus('Calling...');
     
-    // Start call timer after connection is established
-    state.callStartTime = Date.now();
-    startCallTimer();
-}
-
-// Simulate incoming call (for demo purposes)
-function simulateIncomingCall() {
-    console.log('Simulating incoming call...');
+    // Send call request to signaling server
+    sendToSignalingServer({
+        type: 'call-request',
+        from: state.user.number,
+        to: number
+    });
     
-    // Randomly select a contact or use unknown number
-    const randomContact = state.contacts.length > 0 
-        ? state.contacts[Math.floor(Math.random() * state.contacts.length)]
-        : { name: 'Unknown', number: generateUniqueNumber() };
-    
-    // Show incoming call alert
-    if (incomingCallerName) incomingCallerName.textContent = randomContact.name;
-    if (incomingCallerNumber) incomingCallerNumber.textContent = formatPhoneNumber(randomContact.number);
-    if (incomingCallerInitials) incomingCallerInitials.textContent = getInitials(randomContact.name);
-    if (incomingCallAlert) incomingCallAlert.classList.remove('hidden');
+    // Add to call history
+    addCallHistory({
+        number,
+        direction: 'outgoing',
+        type: 'initiated',
+        timestamp: Date.now(),
+        duration: 0 // Will be updated when call ends
+    });
 }
 
 // Accept incoming call
 function acceptIncomingCall() {
-    if (!incomingCallerNumber || !incomingCallerName) return;
+    if (!state.currentCall) return;
     
-    const number = incomingCallerNumber.textContent.replace(/\D/g, '');
-    const contactName = incomingCallerName.textContent;
+    const { number, name } = state.currentCall;
     
     // Hide incoming call alert
     if (incomingCallAlert) incomingCallAlert.classList.add('hidden');
     
     // Set call screen information
-    if (callerName) callerName.textContent = contactName;
+    if (callerName) callerName.textContent = name;
     if (callerNumber) callerNumber.textContent = formatPhoneNumber(number);
-    if (callerInitials) callerInitials.textContent = getInitials(contactName);
+    if (callerInitials) callerInitials.textContent = getInitials(name);
     
     // Show/hide appropriate call actions
     if (incomingCallActions) incomingCallActions.classList.add('hidden');
@@ -544,6 +562,17 @@ function acceptIncomingCall() {
     // Initialize WebRTC
     setupWebRTC(false);
     
+    // Create peer connection
+    createPeerConnection(number);
+    
+    // Send call response to signaling server
+    sendToSignalingServer({
+        type: 'call-response',
+        from: state.user.number,
+        to: number,
+        accepted: true
+    });
+    
     // Add to call history
     addCallHistory({
         number,
@@ -557,7 +586,7 @@ function acceptIncomingCall() {
     showScreen(callScreen);
     
     // Update call status
-    updateCallStatus('Connected');
+    updateCallStatus('Connecting...');
     
     // Start call timer
     state.callStartTime = Date.now();
@@ -566,21 +595,32 @@ function acceptIncomingCall() {
 
 // Reject incoming call
 function rejectIncomingCall() {
-    if (!incomingCallerNumber) return;
+    if (!state.currentCall) return;
     
-    const number = incomingCallerNumber.textContent.replace(/\D/g, '');
+    const { number } = state.currentCall;
     
     // Hide incoming call alert
     if (incomingCallAlert) incomingCallAlert.classList.add('hidden');
+    
+    // Send call response to signaling server
+    sendToSignalingServer({
+        type: 'call-response',
+        from: state.user.number,
+        to: number,
+        accepted: false
+    });
     
     // Add to call history as missed
     addCallHistory({
         number,
         direction: 'incoming',
-        type: 'missed',
+        type: 'rejected',
         timestamp: Date.now(),
         duration: 0
     });
+    
+    // Reset current call
+    state.currentCall = null;
     
     // Update recents tab
     renderRecents();
@@ -588,6 +628,14 @@ function rejectIncomingCall() {
 
 // End current call
 function endCall() {
+    // Notify the remote peer if there's an active call
+    if (state.currentCall) {
+        sendToSignalingServer({
+            type: 'end-call',
+            to: state.currentCall.number
+        });
+    }
+    
     // Clean up WebRTC
     cleanupWebRTC();
     
@@ -599,6 +647,7 @@ function endCall() {
         if (state.callHistory.length > 0) {
             const lastCall = state.callHistory[state.callHistory.length - 1];
             lastCall.duration = callDurationSecs;
+            lastCall.type = 'completed';
             localStorage.setItem('callHistory', JSON.stringify(state.callHistory));
         }
         
@@ -607,6 +656,9 @@ function endCall() {
     
     // Reset call status
     updateCallStatus('');
+    
+    // Reset current call
+    state.currentCall = null;
     
     // Return to main screen
     showScreen(mainScreen);
@@ -695,8 +747,16 @@ function logout() {
     // Clean up
     localStorage.removeItem('user');
     
+    // Disconnect from signaling server
+    if (state.websocket) {
+        state.websocket.close();
+    }
+    
     // Reset state
     state.user = null;
+    state.isSocketConnected = false;
+    state.onlineUsers.clear();
+    cleanupWebRTC();
     
     // Go to auth screen
     showScreen(authScreen);
@@ -738,9 +798,10 @@ async function setupWebRTC(withVideo = false) {
             }
         }
         
-        // In a real app, this would set up a peer connection
-        // For demo purposes, we'll simulate a connection
-        simulateRemoteConnection(withVideo);
+        // If this is an outgoing call, create a peer connection
+        if (state.currentCall && state.currentCall.direction === 'outgoing') {
+            createPeerConnection(state.currentCall.number);
+        }
     } catch (error) {
         console.error('Error accessing media devices', error);
         alert('Could not access camera/microphone. Please check permissions.');
@@ -748,30 +809,131 @@ async function setupWebRTC(withVideo = false) {
     }
 }
 
-// Simulate remote connection (for demo purposes)
-function simulateRemoteConnection(withVideo) {
-    // Simulate a slight delay before connected
-    setTimeout(() => {
-        updateCallStatus('Connected');
-        
-        // If it's a video call, show a placeholder remote video
-        if (withVideo && remoteVideo && state.localStream) {
-            // In a real app, this would be the remote peer's stream
-            // For demo, we'll just mirror the local stream
-            remoteVideo.srcObject = state.localStream;
+// Create peer connection
+function createPeerConnection(remoteNumber) {
+    // Clean up any existing connection
+    cleanupPeerConnection();
+    
+    // Create a new peer connection
+    state.peerConnection = new RTCPeerConnection(webrtcConfig);
+    
+    // Add local stream tracks to the peer connection
+    if (state.localStream) {
+        state.localStream.getTracks().forEach(track => {
+            state.peerConnection.addTrack(track, state.localStream);
+        });
+    }
+    
+    // Set up ICE candidate handling
+    state.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            // Send ICE candidate to signaling server
+            sendToSignalingServer({
+                type: 'ice-candidate',
+                candidate: event.candidate,
+                to: remoteNumber
+            });
         }
-    }, 2000);
+    };
+    
+    // Handle ICE connection state changes
+    state.peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE connection state change:', state.peerConnection.iceConnectionState);
+        
+        switch (state.peerConnection.iceConnectionState) {
+            case 'connected':
+            case 'completed':
+                updateCallStatus('Connected');
+                break;
+            case 'disconnected':
+                updateCallStatus('Connection lost, trying to reconnect...');
+                break;
+            case 'failed':
+                updateCallStatus('Connection failed');
+                setTimeout(endCall, 2000);
+                break;
+            case 'closed':
+                updateCallStatus('Connection closed');
+                break;
+        }
+    };
+    
+    // Handle track events (receiving remote media)
+    state.peerConnection.ontrack = (event) => {
+        console.log('Remote track received:', event.track.kind);
+        
+        if (event.streams && event.streams[0]) {
+            state.remoteStream = event.streams[0];
+            
+            if (remoteVideo) {
+                remoteVideo.srcObject = state.remoteStream;
+                
+                // Show video container if it's a video track
+                if (event.track.kind === 'video' && callVideoContainer) {
+                    callVideoContainer.classList.remove('hidden');
+                }
+            }
+        }
+    };
+    
+    return state.peerConnection;
+}
+
+// Create and send WebRTC offer
+async function createAndSendOffer(remoteNumber) {
+    if (!state.peerConnection) {
+        createPeerConnection(remoteNumber);
+    }
+    
+    try {
+        // Create offer
+        const offer = await state.peerConnection.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+        });
+        
+        // Set local description
+        await state.peerConnection.setLocalDescription(offer);
+        
+        // Send offer to signaling server
+        sendToSignalingServer({
+            type: 'offer',
+            offer: state.peerConnection.localDescription,
+            to: remoteNumber
+        });
+    } catch (error) {
+        console.error('Error creating offer:', error);
+    }
+}
+
+// Clean up peer connection
+function cleanupPeerConnection() {
+    if (state.peerConnection) {
+        state.peerConnection.close();
+        state.peerConnection = null;
+    }
 }
 
 // Clean up WebRTC resources
 function cleanupWebRTC() {
+    // Clean up peer connection
+    cleanupPeerConnection();
+    
+    // Clean up local stream
     if (state.localStream) {
         state.localStream.getTracks().forEach(track => track.stop());
         state.localStream = null;
     }
     
+    // Clean up remote stream
+    state.remoteStream = null;
+    
+    // Reset video elements
     if (localVideo) localVideo.srcObject = null;
     if (remoteVideo) remoteVideo.srcObject = null;
+    
+    // Stop ringtone if playing
+    stopRingtone();
 }
 
 // Helper functions
@@ -834,6 +996,288 @@ function getContactNameByNumber(number) {
 function generateUniqueNumber() {
     // Generate a random 10-digit number (US format)
     return '1' + Math.floor(Math.random() * 9000000000 + 1000000000).toString();
+}
+
+// Connect to the WebSocket signaling server
+function connectToSignalingServer() {
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsUrl = protocol + window.location.host;
+    
+    console.log('Connecting to signaling server at:', wsUrl);
+    
+    state.websocket = new WebSocket(wsUrl);
+    
+    state.websocket.onopen = () => {
+        console.log('Connected to signaling server');
+        state.isSocketConnected = true;
+        
+        // Login to the signaling server with our user info
+        if (state.user) {
+            sendToSignalingServer({
+                type: 'login',
+                number: state.user.number,
+                name: state.user.fullName
+            });
+        }
+    };
+    
+    state.websocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('Received message from server:', data.type);
+        
+        switch (data.type) {
+            case 'login-response':
+                handleLoginResponse(data);
+                break;
+            case 'user-status':
+                handleUserStatus(data);
+                break;
+            case 'incoming-call':
+                handleIncomingCall(data);
+                break;
+            case 'call-answered':
+                handleCallAnswered(data);
+                break;
+            case 'ice-candidate':
+                handleRemoteIceCandidate(data);
+                break;
+            case 'offer':
+                handleRemoteOffer(data);
+                break;
+            case 'answer':
+                handleRemoteAnswer(data);
+                break;
+            case 'end-call':
+                handleRemoteEndCall(data);
+                break;
+            default:
+                console.log('Unknown message type:', data.type);
+        }
+    };
+    
+    state.websocket.onclose = () => {
+        console.log('Disconnected from signaling server');
+        state.isSocketConnected = false;
+        
+        // Try to reconnect after a delay
+        setTimeout(() => {
+            if (state.user) {
+                connectToSignalingServer();
+            }
+        }, 5000);
+    };
+    
+    state.websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        state.isSocketConnected = false;
+    };
+}
+
+// Send message to signaling server
+function sendToSignalingServer(data) {
+    if (state.websocket && state.isSocketConnected) {
+        state.websocket.send(JSON.stringify(data));
+    } else {
+        console.error('Cannot send message: WebSocket not connected');
+    }
+}
+
+// Handle login response from server
+function handleLoginResponse(data) {
+    console.log('Login response:', data);
+    if (data.success) {
+        console.log('Successfully logged in to signaling server');
+    } else {
+        console.error('Failed to login to signaling server:', data.message);
+    }
+}
+
+// Handle user status updates
+function handleUserStatus(data) {
+    const { number, online } = data;
+    
+    if (online) {
+        state.onlineUsers.add(number);
+    } else {
+        state.onlineUsers.delete(number);
+    }
+    
+    // Update UI to show online status for contacts
+    updateContactsOnlineStatus();
+}
+
+// Update contacts UI to show online status
+function updateContactsOnlineStatus() {
+    const contactItems = document.querySelectorAll('.contact-item');
+    
+    contactItems.forEach(item => {
+        const numberElement = item.querySelector('.contact-info p');
+        if (numberElement) {
+            const number = numberElement.textContent.replace(/\D/g, '');
+            const statusIndicator = item.querySelector('.status-indicator') || document.createElement('div');
+            
+            if (!statusIndicator.classList.contains('status-indicator')) {
+                statusIndicator.className = 'status-indicator';
+                item.querySelector('.contact-info').appendChild(statusIndicator);
+            }
+            
+            statusIndicator.className = 'status-indicator';
+            if (state.onlineUsers.has(number)) {
+                statusIndicator.classList.add('online');
+                statusIndicator.title = 'Online';
+            } else {
+                statusIndicator.classList.add('offline');
+                statusIndicator.title = 'Offline';
+            }
+        }
+    });
+}
+
+// Handle incoming call from server
+function handleIncomingCall(data) {
+    console.log('Incoming call from:', data.from, data.fromName);
+    
+    // Store current call information
+    state.currentCall = {
+        number: data.from,
+        name: data.fromName || getContactNameByNumber(data.from) || 'Unknown',
+        direction: 'incoming',
+        withVideo: false
+    };
+    
+    // Update incoming call alert
+    if (incomingCallerName) incomingCallerName.textContent = state.currentCall.name;
+    if (incomingCallerNumber) incomingCallerNumber.textContent = formatPhoneNumber(state.currentCall.number);
+    if (incomingCallerInitials) incomingCallerInitials.textContent = getInitials(state.currentCall.name);
+    
+    // Show incoming call alert
+    if (incomingCallAlert) incomingCallAlert.classList.remove('hidden');
+    
+    // Play ringtone
+    playRingtone();
+}
+
+// Handle call answered response
+function handleCallAnswered(data) {
+    console.log('Call answered:', data);
+    
+    // If call was accepted, create and send an offer
+    if (data.accepted) {
+        updateCallStatus('Call accepted, establishing connection...');
+        
+        // Create WebRTC offer
+        createAndSendOffer(state.currentCall.number);
+    } else {
+        // Call was rejected
+        updateCallStatus('Call rejected');
+        
+        // Add to call history
+        addCallHistory({
+            number: state.currentCall.number,
+            direction: 'outgoing',
+            type: 'rejected',
+            timestamp: Date.now(),
+            duration: 0
+        });
+        
+        // Clean up and return to main screen after a delay
+        setTimeout(() => {
+            cleanupWebRTC();
+            state.currentCall = null;
+            showScreen(mainScreen);
+        }, 1500);
+    }
+}
+
+// Handle remote ICE candidate
+function handleRemoteIceCandidate(data) {
+    console.log('Received remote ICE candidate');
+    
+    if (state.peerConnection && data.candidate) {
+        try {
+            state.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                .catch(error => console.error('Error adding received ice candidate', error));
+        } catch (error) {
+            console.error('Error adding received ice candidate', error);
+        }
+    }
+}
+
+// Handle remote offer
+async function handleRemoteOffer(data) {
+    console.log('Received remote offer');
+    
+    if (!state.peerConnection) {
+        // Create new peer connection
+        createPeerConnection(state.currentCall.number);
+    }
+    
+    try {
+        // Set remote description
+        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        
+        // Create answer
+        const answer = await state.peerConnection.createAnswer();
+        await state.peerConnection.setLocalDescription(answer);
+        
+        // Send answer back
+        sendToSignalingServer({
+            type: 'answer',
+            answer: state.peerConnection.localDescription,
+            to: state.currentCall.number
+        });
+    } catch (error) {
+        console.error('Error handling remote offer:', error);
+    }
+}
+
+// Handle remote answer
+async function handleRemoteAnswer(data) {
+    console.log('Received remote answer');
+    
+    if (state.peerConnection) {
+        try {
+            await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } catch (error) {
+            console.error('Error setting remote description:', error);
+        }
+    }
+}
+
+// Handle remote end call
+function handleRemoteEndCall(data) {
+    console.log('Remote peer ended the call');
+    
+    // Update UI
+    updateCallStatus('Call ended by remote peer');
+    
+    // End the call on our side
+    endCall();
+}
+
+// Play ringtone
+function playRingtone() {
+    // Create audio element for ringtone
+    const ringtone = new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_c518b68cfd.mp3?filename=deduction-528.mp3');
+    ringtone.loop = true;
+    ringtone.play().catch(error => console.error('Error playing ringtone:', error));
+    
+    // Store ringtone reference for stopping later
+    state.ringtone = ringtone;
+    
+    // Stop ringtone after 30 seconds if not answered
+    setTimeout(() => {
+        stopRingtone();
+    }, 30000);
+}
+
+// Stop ringtone
+function stopRingtone() {
+    if (state.ringtone) {
+        state.ringtone.pause();
+        state.ringtone.currentTime = 0;
+        state.ringtone = null;
+    }
 }
 
 // Initialize the app when the DOM is loaded
